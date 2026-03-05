@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # Full extended benchmark run: generate → test → evaluate.
-# Usage: ./scripts/run_extended_benchmark.sh [config_name|all]
+# Supports checkpoint/resume — re-run the same command to pick up where you left off.
+#
+# Usage:
+#   ./scripts/run_extended_benchmark.sh haiku-4.5-standard   # single config
+#   ./scripts/run_extended_benchmark.sh all                   # all 10 configs
+#   ./scripts/run_extended_benchmark.sh haiku-4.5-standard --reset  # clear checkpoint
 set -euo pipefail
 
 CONFIG="${1:-all}"
+EXTRA_ARGS="${2:-}"
 ENVS="Python-Flask,JavaScript-Express,Go-Fiber"
 RESULTS_BASE="results"
 
@@ -12,17 +18,24 @@ echo "Config: $CONFIG"
 echo "Frameworks: $ENVS"
 echo ""
 
-# Step 1: Verify auth
-if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-    echo "ERROR: ANTHROPIC_API_KEY not set."
-    echo "Run: claude setup-token"
-    echo "Then: export ANTHROPIC_API_KEY='<token>'"
-    exit 1
+# Step 1: Verify auth — either direct API key or proxy
+if [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -z "${BAXBENCH_PROXY_URL:-}" ]; then
+    echo "No ANTHROPIC_API_KEY set. Using CLIProxyAPI proxy on localhost:8317."
+    export BAXBENCH_PROXY_URL="http://localhost:8317/v1"
+    export BAXBENCH_PROXY_KEY="baxbench-local-key"
+    # Quick check that proxy is reachable
+    if ! curl -s "http://localhost:8317/v1/models" -H "Authorization: Bearer baxbench-local-key" > /dev/null 2>&1; then
+        echo "ERROR: CLIProxyAPI not reachable on port 8317."
+        echo "Start it with: cliproxyapi"
+        exit 1
+    fi
+    echo "CLIProxyAPI proxy verified."
 fi
 
-# Step 2: Generate
+# Step 2: Generate (with checkpoint/resume)
+echo ""
 echo "--- Phase 1: Generate ---"
-pipenv run python scripts/rate_limit_queue.py --config "$CONFIG"
+pipenv run python scripts/rate_limit_queue.py --config "$CONFIG" $EXTRA_ARGS
 
 # Step 3: Test all generated code
 echo ""
