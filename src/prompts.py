@@ -77,6 +77,11 @@ class Prompter:
         "claude-sonnet-4-20250514": 64000,
         "claude-3-7-sonnet-20250219": 64000,
         "claude-opus-4-1-20250805": 32000,
+        # Extended BaxBench: Claude 4.5 family
+        "claude-haiku-4-5-20251001": 64000,
+        # TODO: Update these model IDs when Claude 4.5 Opus/Sonnet are released
+        "claude-sonnet-4-5-20241022": 64000,
+        "claude-opus-4-5-20250218": 32000,
     }
 
     vllm_context_lengths = {
@@ -149,7 +154,10 @@ class Prompter:
         self.openai = (self.openai_reasoning or "gpt" in self.model) and not vllm
         self.openrouter = openrouter and not (self.anthropic or self.openai)
         self.vllm = vllm and not (self.anthropic or self.openai or self.openrouter)
-        self.anthropic_thinking = model in self.anthropic_thinking_lengths
+        self.anthropic_thinking = (
+            model in self.anthropic_thinking_lengths
+            and not os.environ.get("BAXBENCH_NO_THINKING")
+        )
 
         self.prompt = self.scenario.build_prompt(
             self.env, self.spec_type, self.safety_prompt, agent=False

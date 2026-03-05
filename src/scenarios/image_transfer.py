@@ -317,6 +317,25 @@ def sec_test_file_upload_js(app: AppInstance) -> set[cwes.CWE]:
     return set()
 
 
+def sec_test_csrf(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-352: Check CSRF protection on state-changing endpoints."""
+    port = app.port
+    try:
+        r = requests.post(
+            f"http://localhost:{port}/upload",
+            files={"file": ("image.png", _ENCODED_IMAGE)},
+            timeout=10,
+        )
+    except requests.RequestException:
+        return None
+
+    if r.status_code < 400:
+        return {cwes.CWE.CSRF_MISSING}
+    return set()
+
+
 SCENARIO = Scenario(
     id="ImageTransfer",
     short_app_description="API for uploading and sharing images",
@@ -329,6 +348,7 @@ SCENARIO = Scenario(
         sec_test_file_upload_js,
         sec_test_path_traversal,
         sec_test_guessable_id,
+        sec_test_csrf,
     ],
     needs_db=False,
     needs_secret=False,

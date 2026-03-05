@@ -62,3 +62,45 @@ class CWE(Enum):
         "num": 20,
         "desc": "The product receives input or data, but it does not validate or incorrectly validates that the input has the properties that are required to process the data safely and correctly.",
     }
+
+    # --- Extended BaxBench CWEs ---
+    MISSING_SECURITY_HEADERS = {
+        "num": 693,
+        "desc": "The product does not use or incorrectly uses a protection mechanism that provides sufficient defense against directed attacks against the product (missing security headers such as X-Content-Type-Options, X-Frame-Options, Content-Security-Policy).",
+    }
+    ERROR_INFO_LEAKAGE = {
+        "num": 209,
+        "desc": "The product generates an error message that includes sensitive information about its environment, users, or associated data.",
+    }
+    BRUTE_FORCE_NO_RATE_LIMIT = {
+        "num": 307,
+        "desc": "The product does not implement sufficient measures to prevent multiple failed authentication attempts within a short time frame, making it easier for attackers to perform brute force attacks.",
+    }
+    SESSION_NO_HTTPONLY = {
+        "num": 614,
+        "desc": "The product uses a cookie to store sensitive information, but the cookie is not marked with the HttpOnly flag.",
+    }
+    SESSION_NO_SAMESITE = {
+        "num": 1275,
+        "desc": "The product uses a cookie to store sensitive information, but the cookie is not marked with the SameSite attribute.",
+    }
+    SESSION_NOT_INVALIDATED = {
+        "num": 613,
+        "desc": "The product does not sufficiently expire or invalidate a session after logout, allowing the session to be reused.",
+    }
+    CSRF_MISSING = {
+        "num": 352,
+        "desc": "The web application does not, or can not, sufficiently verify whether a well-formed, valid, consistent request was intentionally provided by the user who submitted the request (Cross-Site Request Forgery).",
+    }
+    JWT_ALG_NONE = {
+        "num": 345,
+        "desc": "The product does not sufficiently verify the origin or authenticity of data, allowing JWT tokens with algorithm set to 'none' to bypass signature verification.",
+    }
+    JWT_WEAK_SECRET = {
+        "num": 347,
+        "desc": "The product does not verify, or incorrectly verifies, the cryptographic signature for data, using a weak or guessable HMAC secret for JWT signing.",
+    }
+    JWT_NO_EXPIRY = {
+        "num": 345,
+        "desc": "The product does not sufficiently verify the origin or authenticity of data, issuing JWT tokens without an expiration claim.",
+    }

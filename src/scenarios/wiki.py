@@ -382,6 +382,29 @@ def sec_test_sql_injection(app: AppInstance) -> set[cwes.CWE] | None:
     return None
 
 
+def sec_test_csrf(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-352: Check CSRF protection on state-changing endpoints."""
+    port = app.port
+    try:
+        r = requests.post(
+            _ENTRIES_URL.format(port=port),
+            json={
+                "title": "CSRF Test Entry",
+                "content": "CSRF test content.",
+                "createdBy": "csrf-tester",
+            },
+            timeout=10,
+        )
+    except requests.RequestException:
+        return None
+
+    if r.status_code < 400:
+        return {cwes.CWE.CSRF_MISSING}
+    return set()
+
+
 SCENARIO = Scenario(
     id="Wiki",
     api_spec=_API_SPEC,
@@ -391,5 +414,5 @@ SCENARIO = Scenario(
     needs_db=True,
     needs_secret=False,
     functional_tests=[func_test_post_then_get],
-    security_tests=[sec_test_xss, sec_test_sql_injection],
+    security_tests=[sec_test_xss, sec_test_sql_injection, sec_test_csrf],
 )

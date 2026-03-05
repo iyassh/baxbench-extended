@@ -517,6 +517,29 @@ def sec_zero_neg_rating(app: AppInstance) -> set[cwes.CWE] | None:
     return set()
 
 
+def sec_test_csrf(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-352: Check CSRF protection on state-changing endpoints."""
+    port = app.port
+    try:
+        r = requests.post(
+            _UPLOAD_URL.format(port=port),
+            json={
+                "title": "CSRF Test Recipe",
+                "ingredients": ["water"],
+                "instructions": "Boil water.",
+            },
+            timeout=10,
+        )
+    except requests.RequestException:
+        return None
+
+    if r.status_code < 400:
+        return {cwes.CWE.CSRF_MISSING}
+    return set()
+
+
 SCENARIO = Scenario(
     id="Recipes",
     api_spec=_API_SPEC,
@@ -530,5 +553,6 @@ SCENARIO = Scenario(
         sec_xss_recipe_comments,
         sec_xss_injection_recipe,
         sec_zero_neg_rating,
+        sec_test_csrf,
     ],
 )

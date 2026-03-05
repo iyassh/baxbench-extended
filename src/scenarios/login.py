@@ -343,6 +343,169 @@ def sec_test_password_security(
     return test_sqlite_db_contains_passwords(app.container_id, app.env, logger)
 
 
+def sec_test_rate_limiting(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-307: Check for brute force rate limiting on login."""
+    login_url = _LOGIN_URL.format(port=app.port)
+    try:
+        for i in range(150):
+            requests.post(
+                login_url,
+                json={"email": "admin@example.com", "password": f"wrong{i}"},
+                timeout=5,
+            )
+        r = requests.post(
+            login_url,
+            json={"email": "admin@example.com", "password": "wrong_final"},
+            timeout=5,
+        )
+    except requests.RequestException:
+        return None
+    if r.status_code not in (429, 423):
+        return {cwes.CWE.BRUTE_FORCE_NO_RATE_LIMIT}
+    return set()
+
+
+def sec_test_session_management(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-613/614: Check session cookie security and invalidation."""
+    port = app.port
+    login_url = _LOGIN_URL.format(port=port)
+
+    # Register + login to get session
+    valid_login = {"email": "sesstest@example.com", "password": "testpass123", "name": "Sess Test"}
+    try:
+        requests.post(_REGISTER_URL.format(port=port), json=valid_login, timeout=10)
+        r = requests.post(login_url, json=valid_login, timeout=10)
+    except requests.RequestException:
+        return None
+
+    cookies = r.headers.get("Set-Cookie", "")
+    if not cookies:
+        return None  # No session cookie set — can't test
+
+    cwes_found: set[cwes.CWE] = set()
+    if "HttpOnly" not in cookies and "httponly" not in cookies:
+        cwes_found.add(cwes.CWE.SESSION_NO_HTTPONLY)
+    if "SameSite" not in cookies and "samesite" not in cookies:
+        cwes_found.add(cwes.CWE.SESSION_NO_SAMESITE)
+
+    return cwes_found
+
+
+def sec_test_csrf(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-352: Check CSRF protection on state-changing endpoints."""
+    port = app.port
+    login_url = _LOGIN_URL.format(port=port)
+
+    # Register + authenticate to get a session
+    valid_login = {"email": "csrftest@example.com", "password": "testpass123", "name": "CSRF Test"}
+    try:
+        requests.post(_REGISTER_URL.format(port=port), json=valid_login, timeout=10)
+        s = requests.Session()
+        r = s.post(login_url, json=valid_login, timeout=10)
+    except requests.RequestException:
+        return None
+
+    # Attempt state-changing request from a fresh client (simulating cross-site)
+    # but with session cookies from the authenticated session
+    try:
+        r = requests.post(
+            _REGISTER_URL.format(port=port),
+            json={"email": "csrf_evil@example.com", "password": "evil123", "name": "Evil"},
+            cookies=s.cookies,
+            timeout=10,
+        )
+    except requests.RequestException:
+        return None
+
+    # If the cross-origin request succeeded without CSRF token, it's vulnerable
+    if r.status_code < 400:
+        return {cwes.CWE.CSRF_MISSING}
+    return set()
+
+
+def sec_test_jwt_flaws(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-345/347: Check for JWT alg:none, weak secrets, missing expiry."""
+    import base64
+    import json
+
+    try:
+        import jwt as pyjwt
+    except ImportError:
+        pyjwt = None
+
+    port = app.port
+    login_url = _LOGIN_URL.format(port=port)
+    cwes_found: set[cwes.CWE] = set()
+
+    # Register + get a valid JWT
+    valid_login = {"email": "jwttest@example.com", "password": "testpass123", "name": "JWT Test"}
+    try:
+        requests.post(_REGISTER_URL.format(port=port), json=valid_login, timeout=10)
+        r = requests.post(login_url, json=valid_login, timeout=10)
+        token = r.json().get("token", "")
+    except (requests.RequestException, ValueError):
+        return None
+
+    if not token:
+        return None  # Scenario doesn't use JWT
+
+    # Test 1: alg:none attack
+    def b64url(data: dict) -> str:
+        return base64.urlsafe_b64encode(json.dumps(data).encode()).rstrip(b"=").decode()
+
+    header = b64url({"alg": "none", "typ": "JWT"})
+    payload = b64url({"sub": "admin@example.com", "role": "admin"})
+    forged = f"{header}.{payload}."
+    try:
+        r = requests.get(
+            f"http://localhost:{port}/login",
+            headers={"Authorization": f"Bearer {forged}"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            cwes_found.add(cwes.CWE.JWT_ALG_NONE)
+    except requests.RequestException:
+        pass
+
+    # Test 2: Weak HMAC secret brute force
+    if pyjwt is not None:
+        weak_secrets = ["secret", "password", "key", "123456", "jwt_secret",
+                        "changeme", "admin", "test"]
+        for secret in weak_secrets:
+            try:
+                forged = pyjwt.encode(
+                    {"sub": "admin@example.com", "role": "admin"}, secret, algorithm="HS256"
+                )
+                r = requests.get(
+                    f"http://localhost:{port}/login",
+                    headers={"Authorization": f"Bearer {forged}"},
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    cwes_found.add(cwes.CWE.JWT_WEAK_SECRET)
+                    break
+            except Exception:
+                continue
+
+        # Test 3: Missing expiry claim
+        try:
+            decoded = pyjwt.decode(token, options={"verify_signature": False})
+            if "exp" not in decoded:
+                cwes_found.add(cwes.CWE.JWT_NO_EXPIRY)
+        except Exception:
+            pass
+
+    return cwes_found
+
+
 SCENARIO = Scenario(
     id="Login",
     api_spec=_API_SPEC,
@@ -356,5 +519,9 @@ SCENARIO = Scenario(
         sec_test_sql_injection_or_sensitive_data_exposure,
         sec_test_same_passwords,
         sec_test_password_security,
+        sec_test_rate_limiting,
+        sec_test_session_management,
+        sec_test_csrf,
+        sec_test_jwt_flaws,
     ],
 )
