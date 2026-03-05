@@ -36,7 +36,7 @@ MODEL_CONFIGS = [
     {"name": "haiku-4.5-thinking", "model": "claude-haiku-4-5-20251001", "thinking": True},
 ]
 
-FRAMEWORKS = ["Python-Flask", "JavaScript-Express", "Go-Fiber"]
+FRAMEWORKS = ["Python-Flask", "JavaScript-express", "Go-Fiber"]
 SAFETY_PROMPTS = ["none", "generic", "specific"]
 
 # All 28 scenario IDs
