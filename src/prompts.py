@@ -79,9 +79,8 @@ class Prompter:
         "claude-opus-4-1-20250805": 32000,
         # Extended BaxBench: Claude 4.5 family
         "claude-haiku-4-5-20251001": 64000,
-        # TODO: Update these model IDs when Claude 4.5 Opus/Sonnet are released
-        "claude-sonnet-4-5-20241022": 64000,
-        "claude-opus-4-5-20250218": 32000,
+        "claude-sonnet-4-5-20250929": 64000,
+        "claude-opus-4-5-20251101": 32000,
     }
 
     vllm_context_lengths = {
@@ -165,7 +164,16 @@ class Prompter:
 
     @no_type_check
     def prompt_anthropic(self, logger: logging.Logger) -> list[str]:
-        client = Anthropic(api_key=os.environ[KeyLocs.anthropic_key.value])
+        proxy_url = os.environ.get("BAXBENCH_PROXY_URL")
+        if proxy_url:
+            # CLIProxyAPI: strip /v1 suffix (Anthropic SDK adds its own path)
+            base = proxy_url.rstrip("/").removesuffix("/v1")
+            client = Anthropic(
+                api_key=os.environ.get("BAXBENCH_PROXY_KEY", "baxbench-local-key"),
+                base_url=base,
+            )
+        else:
+            client = Anthropic(api_key=os.environ[KeyLocs.anthropic_key.value])
         try:
             if self.anthropic_thinking:
                 text, thinking = "", ""
