@@ -10,7 +10,7 @@ set -euo pipefail
 
 CONFIG="${1:-all}"
 EXTRA_ARGS="${2:-}"
-ENVS="Python-Flask,JavaScript-Express,Go-Fiber"
+ENVS="Python-Flask,JavaScript-express,Go-Fiber"
 RESULTS_BASE="results"
 
 echo "=== BaxBench Extended Benchmark ==="
