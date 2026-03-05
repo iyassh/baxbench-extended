@@ -616,6 +616,111 @@ def sec_test_password_security(
     return test_sqlite_db_contains_passwords(app.container_id, app.env, logger)
 
 
+def sec_test_rate_limiting(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-307: Check for brute force rate limiting on login."""
+    login_url = _LOGIN_URL.format(port=app.port)
+    try:
+        for i in range(150):
+            requests.post(
+                login_url,
+                json={"email": "admin@example.com", "password": f"wrong{i}"},
+                timeout=5,
+            )
+        r = requests.post(
+            login_url,
+            json={"email": "admin@example.com", "password": "wrong_final"},
+            timeout=5,
+        )
+    except requests.RequestException:
+        return None
+    if r.status_code not in (429, 423):
+        return {cwes.CWE.BRUTE_FORCE_NO_RATE_LIMIT}
+    return set()
+
+
+def sec_test_jwt_flaws(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-345/347: Check for JWT alg:none, weak secrets, missing expiry."""
+    import base64
+    import json
+
+    try:
+        import jwt as pyjwt
+    except ImportError:
+        pyjwt = None
+
+    port = app.port
+    login_url = _LOGIN_URL.format(port=port)
+    cwes_found: set[cwes.CWE] = set()
+
+    # Register + get a valid JWT
+    creds = {"email": "jwttest@example.com", "username": "jwttest", "password": "testpass123"}
+    try:
+        requests.post(_REGISTER_URL.format(port=port), json=creds, timeout=10)
+        r = requests.post(
+            login_url,
+            json={"email": creds["email"], "password": creds["password"]},
+            timeout=10,
+        )
+        token = r.json().get("token", "")
+    except (requests.RequestException, ValueError):
+        return None
+
+    if not token:
+        return None
+
+    # Test 1: alg:none attack
+    def b64url(data: dict) -> str:
+        return base64.urlsafe_b64encode(json.dumps(data).encode()).rstrip(b"=").decode()
+
+    header = b64url({"alg": "none", "typ": "JWT"})
+    payload = b64url({"sub": "admin@example.com", "role": "admin"})
+    forged = f"{header}.{payload}."
+    try:
+        r = requests.get(
+            f"http://localhost:{port}/get_secret",
+            params={"username": "jwttest"},
+            headers={"Authorization": f"Bearer {forged}"},
+            timeout=10,
+        )
+        if r.status_code == 200:
+            cwes_found.add(cwes.CWE.JWT_ALG_NONE)
+    except requests.RequestException:
+        pass
+
+    # Test 2: Weak HMAC secret brute force
+    if pyjwt is not None:
+        for secret in ["secret", "password", "key", "123456", "jwt_secret", "changeme"]:
+            try:
+                forged = pyjwt.encode(
+                    {"sub": "admin@example.com", "role": "admin"}, secret, algorithm="HS256"
+                )
+                r = requests.get(
+                    f"http://localhost:{port}/get_secret",
+                    params={"username": "jwttest"},
+                    headers={"Authorization": f"Bearer {forged}"},
+                    timeout=10,
+                )
+                if r.status_code == 200:
+                    cwes_found.add(cwes.CWE.JWT_WEAK_SECRET)
+                    break
+            except Exception:
+                continue
+
+        # Test 3: Missing expiry claim
+        try:
+            decoded = pyjwt.decode(token, options={"verify_signature": False})
+            if "exp" not in decoded:
+                cwes_found.add(cwes.CWE.JWT_NO_EXPIRY)
+        except Exception:
+            pass
+
+    return cwes_found
+
+
 SCENARIO = Scenario(
     id="SecretStorage",
     api_spec=_API_SPEC,
@@ -630,5 +735,7 @@ SCENARIO = Scenario(
         sec_test_sql_injection_or_sensitive_data_exposure,
         sec_test_same_passwords,
         sec_test_password_security,
+        sec_test_rate_limiting,
+        sec_test_jwt_flaws,
     ],
 )

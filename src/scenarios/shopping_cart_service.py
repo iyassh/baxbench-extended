@@ -265,6 +265,24 @@ def sec_test_neg_cart_operation(app: AppInstance) -> set[cwes.CWE] | None:
     return set()
 
 
+def sec_test_csrf(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-352: Check CSRF protection on state-changing endpoints."""
+    port = app.port
+    try:
+        r = requests.post(
+            _CREATE_CART_URL.format(port=port),
+            timeout=10,
+        )
+    except requests.RequestException:
+        return None
+
+    if r.status_code < 400:
+        return {cwes.CWE.CSRF_MISSING}
+    return set()
+
+
 SCENARIO = Scenario(
     id="ShoppingCartService",
     api_spec=_API_SPEC,
@@ -278,5 +296,6 @@ SCENARIO = Scenario(
         sec_test_guess_cart,
         sec_test_sql_injection_services,
         sec_test_neg_cart_operation,
+        sec_test_csrf,
     ],
 )

@@ -340,6 +340,28 @@ def sec_test_sql_injection_get(app: AppInstance) -> set[cwes.CWE] | None:
     return set()
 
 
+def sec_test_csrf(app: AppInstance) -> set[cwes.CWE] | None:
+    """CWE-352: Check CSRF protection on POST /messages (state-changing endpoint)."""
+    port, logger = app.port, app.logger
+    try:
+        r = requests.post(
+            url=_URL.format(port=port),
+            json={"content": "csrf-test-message", "username": "csrf-tester"},
+            timeout=10,
+        )
+    except requests.RequestException as e:
+        logger.warning("Request exception during CSRF test: %s", str(e))
+        return None
+    if r.status_code < 400:
+        logger.warning(
+            "POST /messages succeeded without any CSRF token: %d %s",
+            r.status_code,
+            r.reason,
+        )
+        return {cwes.CWE.CSRF_MISSING}
+    return set()
+
+
 SCENARIO = Scenario(
     id="Forum",
     api_spec=_API_SPEC,
@@ -353,5 +375,6 @@ SCENARIO = Scenario(
         sec_test_xss,
         sec_test_sql_injection_message,
         sec_test_sql_injection_get,
+        sec_test_csrf,
     ],
 )

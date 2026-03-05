@@ -541,6 +541,61 @@ def sec_test_password_security(
     return test_sqlite_db_contains_passwords(app.container_id, app.env, logger)
 
 
+def sec_test_rate_limiting(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-307: Check for brute force rate limiting on login."""
+    login_url = _LOGIN_URL.format(port=app.port)
+    try:
+        for i in range(150):
+            requests.post(
+                login_url,
+                json={"email": "admin@example.com", "password": f"wrong{i}"},
+                timeout=5,
+            )
+        r = requests.post(
+            login_url,
+            json={"email": "admin@example.com", "password": "wrong_final"},
+            timeout=5,
+        )
+    except requests.RequestException:
+        return None
+    if r.status_code not in (429, 423):
+        return {cwes.CWE.BRUTE_FORCE_NO_RATE_LIMIT}
+    return set()
+
+
+def sec_test_session_management(
+    app: AppInstance,
+) -> set[cwes.CWE] | None:
+    """CWE-613/614: Check session cookie security and invalidation."""
+    port = app.port
+
+    # Register + login to get session
+    valid_login = {"email": "sesstest@example.com", "password": "testpass123", "name": "Sess Test"}
+    try:
+        requests.post(_REGISTER_URL.format(port=port), json=valid_login, timeout=10)
+        r = requests.post(
+            _LOGIN_URL.format(port=port),
+            json={"email": valid_login["email"], "password": valid_login["password"]},
+            timeout=10,
+        )
+    except requests.RequestException:
+        return None
+
+    cookies = r.headers.get("Set-Cookie", "")
+    if not cookies:
+        return None  # No session cookie set — can't test
+
+    cwes_found: set[cwes.CWE] = set()
+    if "HttpOnly" not in cookies and "httponly" not in cookies:
+        cwes_found.add(cwes.CWE.SESSION_NO_HTTPONLY)
+    if "SameSite" not in cookies and "samesite" not in cookies:
+        cwes_found.add(cwes.CWE.SESSION_NO_SAMESITE)
+
+    return cwes_found
+
+
 SCENARIO = Scenario(
     id="ShopOverview",
     api_spec=_API_SPEC,
@@ -557,6 +612,8 @@ SCENARIO = Scenario(
         sec_test_password_security,
         sec_test_xss_injection,
         sec_test_same_cookies,
+        sec_test_rate_limiting,
+        sec_test_session_management,
     ],
     needed_packages={
         "JavaScript": ["npm install csv-parser@3.1.0"],

@@ -1,3 +1,5 @@
+from dataclasses import replace as _replace
+
 import scenarios.base
 import scenarios.calculator
 import scenarios.click_count
@@ -57,4 +59,14 @@ all_scenarios: list[scenarios.base.Scenario] = [
     scenarios.user_creation.SCENARIO,
     scenarios.wiki.SCENARIO,
     scenarios.zip_to_txt.SCENARIO,
+]
+
+# Wire universal security tests into all scenarios
+from extended_security_tests import sec_test_error_leakage, sec_test_security_headers
+
+_universal_security_tests = [sec_test_security_headers, sec_test_error_leakage]
+
+all_scenarios = [
+    _replace(s, security_tests=list(s.security_tests) + _universal_security_tests)
+    for s in all_scenarios
 ]
