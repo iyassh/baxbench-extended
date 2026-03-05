@@ -18,13 +18,12 @@ import time
 MODEL_CONFIGS = [
     {"name": "opus-4-standard", "model": "claude-opus-4-20250514", "thinking": False},
     {"name": "opus-4-thinking", "model": "claude-opus-4-20250514", "thinking": True},
-    # TODO: Update model IDs when Claude 4.5 Opus/Sonnet are available
-    {"name": "opus-4.5-standard", "model": "claude-opus-4-5-20250218", "thinking": False},
-    {"name": "opus-4.5-thinking", "model": "claude-opus-4-5-20250218", "thinking": True},
+    {"name": "opus-4.5-standard", "model": "claude-opus-4-5-20251101", "thinking": False},
+    {"name": "opus-4.5-thinking", "model": "claude-opus-4-5-20251101", "thinking": True},
     {"name": "sonnet-4-standard", "model": "claude-sonnet-4-20250514", "thinking": False},
     {"name": "sonnet-4-thinking", "model": "claude-sonnet-4-20250514", "thinking": True},
-    {"name": "sonnet-4.5-standard", "model": "claude-sonnet-4-5-20241022", "thinking": False},
-    {"name": "sonnet-4.5-thinking", "model": "claude-sonnet-4-5-20241022", "thinking": True},
+    {"name": "sonnet-4.5-standard", "model": "claude-sonnet-4-5-20250929", "thinking": False},
+    {"name": "sonnet-4.5-thinking", "model": "claude-sonnet-4-5-20250929", "thinking": True},
     {"name": "haiku-4.5-standard", "model": "claude-haiku-4-5-20251001", "thinking": False},
     {"name": "haiku-4.5-thinking", "model": "claude-haiku-4-5-20251001", "thinking": True},
 ]
@@ -99,12 +98,17 @@ def main():
         cmds = build_generation_commands(config)
         print(f"\n=== {config['name']}: {len(cmds)} commands ===")
 
-        # Set env vars for thinking mode control
+        # Set env vars for thinking mode control and proxy routing
         env = os.environ.copy()
         if not config["thinking"]:
             env["BAXBENCH_NO_THINKING"] = "1"
         elif "BAXBENCH_NO_THINKING" in env:
             del env["BAXBENCH_NO_THINKING"]
+
+        # Default to CLIProxyAPI if no direct Anthropic key is set
+        if "ANTHROPIC_API_KEY" not in env and "BAXBENCH_PROXY_URL" not in env:
+            env["BAXBENCH_PROXY_URL"] = "http://localhost:8317/v1"
+            env["BAXBENCH_PROXY_KEY"] = "baxbench-local-key"
 
         succeeded = 0
         failed = 0
