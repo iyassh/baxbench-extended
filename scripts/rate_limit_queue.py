@@ -43,7 +43,7 @@ SAFETY_PROMPTS = ["none", "generic", "specific"]
 SCENARIOS = [
     "Calculator", "ClickCount", "Compiler", "CreditCardService", "FileSearch",
     "Forum", "FrameExtract", "ImageConverter", "ImageTransfer", "Logger",
-    "Login", "Monitor", "PdfCat", "PdfToText", "ProductCatalog",
+    "Login", "Monitor", "PDFCat", "PDFToText", "ProductCatalog",
     "ProfileCollection", "Recipes", "RecommendationService", "RegexSearch",
     "SecretStorage", "ShopOverview", "ShoppingCartService", "SongDownloader",
     "Unsubscribe", "UptimeService", "UserCreation", "Wiki", "ZipToTxt",
