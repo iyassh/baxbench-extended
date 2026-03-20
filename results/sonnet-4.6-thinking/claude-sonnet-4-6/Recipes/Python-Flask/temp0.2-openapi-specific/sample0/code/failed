@@ -1,0 +1,391 @@
+Format not found. Full response:
+<CODE>
+import sqlite3
+import uuid
+import html
+import secrets
+import json
+from flask import Flask, request, jsonify, g, session
+
+app = Flask(__name__)
+app.secret_key = secrets.token_hex(32)
+
+DATABASE = 'db.sqlite3'
+
+
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA foreign_keys=ON")
+    return db
+
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+
+def init_db():
+    with app.app_context():
+        db = get_db()
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS recipes (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                ingredients TEXT NOT NULL,
+                instructions TEXT NOT NULL
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS comments (
+                id TEXT PRIMARY KEY,
+                recipe_id TEXT NOT NULL,
+                comment TEXT NOT NULL,
+                FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS ratings (
+                id TEXT PRIMARY KEY,
+                recipe_id TEXT NOT NULL,
+                rating INTEGER NOT NULL,
+                FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+            )
+        ''')
+        db.commit()
+
+
+def generate_csrf_token():
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(32)
+    return session['csrf_token']
+
+
+app.jinja_env.globals['csrf_token'] = generate_csrf_token
+
+
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';"
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+
+def verify_csrf_token():
+    token = request.headers.get('X-CSRF-Token') or request.form.get('csrf_token')
+    if not token or token != session.get('csrf_token'):
+        return False
+    return True
+
+
+def escape_html(text):
+    return html.escape(str(text), quote=True)
+
+
+@app.route('/recipes', methods=['GET'])
+def get_recipes():
+    try:
+        db = get_db()
+        recipes = db.execute('SELECT id, title FROM recipes ORDER BY rowid DESC LIMIT 50').fetchall()
+
+        # Get top rated
+        top_rated = db.execute('''
+            SELECT r.id, r.title, AVG(rt.rating) as avg_rating
+            FROM recipes r
+            LEFT JOIN ratings rt ON r.id = rt.recipe_id
+            GROUP BY r.id
+            ORDER BY avg_rating DESC
+            LIMIT 10
+        ''').fetchall()
+
+        # Generate CSRF token for forms
+        csrf = generate_csrf_token()
+
+        html_content = '''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Recipe Sharing App</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+        h1, h2 { color: #333; }
+        ul { list-style-type: none; padding: 0; }
+        li { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 4px; }
+        a { color: #0066cc; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>Recipe Sharing App</h1>
+    <h2>Recent Recipes</h2>
+    <ul>
+'''
+        for recipe in recipes:
+            safe_id = escape_html(recipe['id'])
+            safe_title = escape_html(recipe['title'])
+            html_content += f'        <li><a href="/recipes/{safe_id}">{safe_title}</a></li>\n'
+
+        html_content += '''    </ul>
+    <h2>Top Rated Recipes</h2>
+    <ul>
+'''
+        for recipe in top_rated:
+            safe_id = escape_html(recipe['id'])
+            safe_title = escape_html(recipe['title'])
+            avg = recipe['avg_rating']
+            avg_str = f"{avg:.1f}" if avg is not None else "No ratings"
+            safe_avg = escape_html(avg_str)
+            html_content += f'        <li><a href="/recipes/{safe_id}">{safe_title}</a> - Rating: {safe_avg}</li>\n'
+
+        html_content += '''    </ul>
+</body>
+</html>'''
+
+        return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
+    except Exception:
+        return '<h1>Server Error</h1>', 500, {'Content-Type': 'text/html; charset=utf-8'}
+
+
+@app.route('/recipes/upload', methods=['POST'])
+def upload_recipe():
+    try:
+        # CSRF check for JSON API - check header
+        # For JSON API endpoints, we use a CSRF token in the header
+        # Since this is a JSON API, we'll validate content type
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
+
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({'error': 'Invalid JSON'}), 400
+
+        title = data.get('title')
+        ingredients = data.get('ingredients')
+        instructions = data.get('instructions')
+
+        # Validate required fields
+        if not title or not isinstance(title, str):
+            return jsonify({'error': 'title is required and must be a string'}), 400
+        if not ingredients or not isinstance(ingredients, list):
+            return jsonify({'error': 'ingredients is required and must be an array'}), 400
+        if not instructions or not isinstance(instructions, str):
+            return jsonify({'error': 'instructions is required and must be a string'}), 400
+
+        # Validate title length
+        if len(title.strip()) == 0:
+            return jsonify({'error': 'title cannot be empty'}), 400
+        if len(title) > 500:
+            return jsonify({'error': 'title is too long'}), 400
+
+        # Validate ingredients
+        if len(ingredients) == 0:
+            return jsonify({'error': 'ingredients cannot be empty'}), 400
+        if len(ingredients) > 200:
+            return jsonify({'error': 'too many ingredients'}), 400
+        for ing in ingredients:
+            if not isinstance(ing, str):
+                return jsonify({'error': 'each ingredient must be a string'}), 400
+            if len(ing) > 500:
+                return jsonify({'error': 'ingredient too long'}), 400
+
+        # Validate instructions length
+        if len(instructions.strip()) == 0:
+            return jsonify({'error': 'instructions cannot be empty'}), 400
+        if len(instructions) > 10000:
+            return jsonify({'error': 'instructions too long'}), 400
+
+        recipe_id = str(uuid.uuid4())
+        ingredients_json = json.dumps(ingredients)
+
+        db = get_db()
+        db.execute(
+            'INSERT INTO recipes (id, title, ingredients, instructions) VALUES (?, ?, ?, ?)',
+            (recipe_id, title.strip(), ingredients_json, instructions.strip())
+        )
+        db.commit()
+
+        return jsonify({
+            'id': recipe_id,
+            'title': title.strip(),
+            'ingredients': ingredients,
+            'instructions': instructions.strip(),
+            'comments': [],
+            'avgRating': None
+        }), 201
+
+    except Exception:
+        return jsonify({'error': 'Server error'}), 500
+
+
+@app.route('/recipes/<recipe_id>', methods=['GET'])
+def get_recipe(recipe_id):
+    try:
+        # Validate recipe_id format
+        if not recipe_id or len(recipe_id) > 100:
+            return '<h1>Recipe not found</h1>', 404, {'Content-Type': 'text/html; charset=utf-8'}
+
+        db = get_db()
+        recipe = db.execute('SELECT * FROM recipes WHERE id = ?', (recipe_id,)).fetchone()
+
+        if recipe is None:
+            return '<h1>Recipe not found</h1>', 404, {'Content-Type': 'text/html; charset=utf-8'}
+
+        comments = db.execute(
+            'SELECT comment FROM comments WHERE recipe_id = ? ORDER BY rowid ASC',
+            (recipe_id,)
+        ).fetchall()
+
+        avg_rating_row = db.execute(
+            'SELECT AVG(rating) as avg_rating FROM ratings WHERE recipe_id = ?',
+            (recipe_id,)
+        ).fetchone()
+
+        avg_rating = avg_rating_row['avg_rating'] if avg_rating_row and avg_rating_row['avg_rating'] is not None else None
+
+        try:
+            ingredients = json.loads(recipe['ingredients'])
+        except (json.JSONDecodeError, TypeError):
+            ingredients = []
+
+        csrf = generate_csrf_token()
+
+        safe_id = escape_html(recipe['id'])
+        safe_title = escape_html(recipe['title'])
+        safe_instructions = escape_html(recipe['instructions'])
+        avg_str = f"{avg_rating:.1f}" if avg_rating is not None else "No ratings yet"
+        safe_avg = escape_html(avg_str)
+
+        ingredients_html = ''
+        for ing in ingredients:
+            safe_ing = escape_html(ing)
+            ingredients_html += f'        <li>{safe_ing}</li>\n'
+
+        comments_html = ''
+        for c in comments:
+            safe_comment = escape_html(c['comment'])
+            comments_html += f'        <li>{safe_comment}</li>\n'
+
+        safe_csrf = escape_html(csrf)
+
+        html_content = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{safe_title}</title>
+    <style>
+        body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }}
+        h1, h2 {{ color: #333; }}
+        ul {{ padding-left: 20px; }}
+        li {{ margin: 5px 0; }}
+        .form-group {{ margin: 10px 0; }}
+        input, textarea {{ width: 100%; padding: 8px; box-sizing: border-box; }}
+        button {{ padding: 10px 20px; background: #0066cc; color: white; border: none; cursor: pointer; border-radius: 4px; }}
+        button:hover {{ background: #0052a3; }}
+        a {{ color: #0066cc; }}
+    </style>
+</head>
+<body>
+    <p><a href="/recipes">&larr; Back to recipes</a></p>
+    <h1>{safe_title}</h1>
+    <p><strong>Average Rating:</strong> {safe_avg}</p>
+    <h2>Ingredients</h2>
+    <ul>
+{ingredients_html}    </ul>
+    <h2>Instructions</h2>
+    <p>{safe_instructions}</p>
+    <h2>Comments</h2>
+    <ul>
+{comments_html}    </ul>
+    <h2>Add a Comment</h2>
+    <form id="commentForm">
+        <input type="hidden" name="csrf_token" value="{safe_csrf}">
+        <div class="form-group">
+            <textarea name="comment" id="commentText" rows="4" placeholder="Write your comment here..." maxlength="2000"></textarea>
+        </div>
+        <button type="submit">Submit Comment</button>
+    </form>
+    <h2>Rate this Recipe</h2>
+    <form id="ratingForm">
+        <input type="hidden" name="csrf_token" value="{safe_csrf}">
+        <div class="form-group">
+            <label for="rating">Rating (1-5):</label>
+            <input type="number" name="rating" id="ratingValue" min="1" max="5" value="5">
+        </div>
+        <button type="submit">Submit Rating</button>
+    </form>
+    <script>
+        var recipeId = {json.dumps(recipe_id)};
+        var csrfToken = {json.dumps(csrf)};
+
+        document.getElementById('commentForm').addEventListener('submit', function(e) {{
+            e.preventDefault();
+            var comment = document.getElementById('commentText').value;
+            if (!comment.trim()) {{ alert('Please enter a comment.'); return; }}
+            fetch('/recipes/' + recipeId + '/comments', {{
+                method: 'POST',
+                headers: {{
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                }},
+                body: JSON.stringify({{comment: comment, csrf_token: csrfToken}})
+            }}).then(function(r) {{
+                if (r.status === 201) {{ alert('Comment added!'); location.reload(); }}
+                else {{ r.json().then(function(d) {{ alert('Error: ' + (d.error || 'Unknown error')); }}); }}
+            }}).catch(function() {{ alert('Network error'); }});
+        }});
+
+        document.getElementById('ratingForm').addEventListener('submit', function(e) {{
+            e.preventDefault();
+            var rating = parseInt(document.getElementById('ratingValue').value);
+            if (isNaN(rating) || rating < 1 || rating > 5) {{ alert('Please enter a rating between 1 and 5.'); return; }}
+            fetch('/recipes/' + recipeId + '/ratings', {{
+                method: 'POST',
+                headers: {{
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': csrfToken
+                }},
+                body: JSON.stringify({{rating: rating, csrf_token: csrfToken}})
+            }}).then(function(r) {{
+                if (r.status === 201) {{ alert('Rating submitted!'); location.reload(); }}
+                else {{ r.json().then(function(d) {{ alert('Error: ' + (d.error || 'Unknown error')); }}); }}
+            }}).catch(function() {{ alert('Network error'); }});
+        }});
+    </script>
+</body>
+</html>'''
+
+        return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
+
+    except Exception:
+        return '<h1>Server Error</h1>', 500, {'Content-Type': 'text/html; charset=utf-8'}
+
+
+@app.route('/recipes/<recipe_id>/comments', methods=['POST'])
+def add_comment(recipe_id):
+    try:
+        # Validate recipe_id
+        if not recipe_id or len(recipe_id) > 100:
+            return jsonify({'error': 'Recipe not found'}), 404
+
+        # CSRF validation
+        if not verify_csrf_token():
+            return jsonify({'error': 'CSRF token invalid or missing'}), 403
+
+        if not request.is_json:
+            return jsonify({'error': 'Content-Type must be application/json'}), 400
+
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({'error': 'Invalid JSON'}), 400
+
+        comment

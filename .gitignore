@@ -4,7 +4,7 @@
 **/.DS_Store
 .vscode
 prompt_cache.json
-results
+# results  (included in repo for this project)
 tmp
 results_copy
 secret.sh

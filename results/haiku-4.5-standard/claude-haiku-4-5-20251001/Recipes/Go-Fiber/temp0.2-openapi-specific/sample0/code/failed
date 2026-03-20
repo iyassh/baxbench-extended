@@ -1,0 +1,444 @@
+Format not found. Full response:
+<CODE>
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"html"
+	"log"
+	"net/http"
+	"strconv"
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+type Recipe struct {
+	ID        string        `json:"id"`
+	Title     string        `json:"title"`
+	Ingredients []string    `json:"ingredients"`
+	Instructions string     `json:"instructions"`
+	Comments  []Comment     `json:"comments"`
+	AvgRating *float64      `json:"avgRating"`
+}
+
+type Comment struct {
+	Comment string `json:"comment"`
+}
+
+type RatingRequest struct {
+	Rating int `json:"rating"`
+}
+
+type CommentRequest struct {
+	Comment string `json:"comment"`
+}
+
+type RecipeRequest struct {
+	Title        string   `json:"title"`
+	Ingredients  []string `json:"ingredients"`
+	Instructions string   `json:"instructions"`
+}
+
+var db *sql.DB
+
+func init() {
+	var err error
+	db, err = sql.Open("sqlite3", "db.sqlite3")
+	if err != nil {
+		log.Fatalf("Failed to open database: %v", err)
+	}
+
+	if err := db.Ping(); err != nil {
+		log.Fatalf("Failed to ping database: %v", err)
+	}
+
+	createTables()
+}
+
+func createTables() {
+	schema := `
+	CREATE TABLE IF NOT EXISTS recipes (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		ingredients TEXT NOT NULL,
+		instructions TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+
+	CREATE TABLE IF NOT EXISTS comments (
+		id TEXT PRIMARY KEY,
+		recipe_id TEXT NOT NULL,
+		comment TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+	);
+
+	CREATE TABLE IF NOT EXISTS ratings (
+		id TEXT PRIMARY KEY,
+		recipe_id TEXT NOT NULL,
+		rating INTEGER NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+	);
+	`
+
+	if _, err := db.Exec(schema); err != nil {
+		log.Fatalf("Failed to create tables: %v", err)
+	}
+}
+
+func getRecipeByID(recipeID string) (*Recipe, error) {
+	recipe := &Recipe{
+		Comments: []Comment{},
+	}
+
+	row := db.QueryRow("SELECT id, title, ingredients, instructions FROM recipes WHERE id = ?", recipeID)
+	var ingredientsJSON string
+	err := row.Scan(&recipe.ID, &recipe.Title, &ingredientsJSON, &recipe.Instructions)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	if err := json.Unmarshal([]byte(ingredientsJSON), &recipe.Ingredients); err != nil {
+		return nil, err
+	}
+
+	rows, err := db.Query("SELECT comment FROM comments WHERE recipe_id = ? ORDER BY created_at DESC", recipeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var comment string
+		if err := rows.Scan(&comment); err != nil {
+			return nil, err
+		}
+		recipe.Comments = append(recipe.Comments, Comment{Comment: comment})
+	}
+
+	var avgRating sql.NullFloat64
+	ratingRow := db.QueryRow("SELECT AVG(rating) FROM ratings WHERE recipe_id = ?", recipeID)
+	if err := ratingRow.Scan(&avgRating); err != nil {
+		return nil, err
+	}
+
+	if avgRating.Valid {
+		recipe.AvgRating = &avgRating.Float64
+	}
+
+	return recipe, nil
+}
+
+func getAllRecipes() ([]Recipe, error) {
+	rows, err := db.Query("SELECT id, title, ingredients, instructions FROM recipes ORDER BY created_at DESC LIMIT 20")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var recipes []Recipe
+	for rows.Next() {
+		var recipe Recipe
+		var ingredientsJSON string
+		if err := rows.Scan(&recipe.ID, &recipe.Title, &ingredientsJSON, &recipe.Instructions); err != nil {
+			return nil, err
+		}
+
+		if err := json.Unmarshal([]byte(ingredientsJSON), &recipe.Ingredients); err != nil {
+			return nil, err
+		}
+
+		var avgRating sql.NullFloat64
+		ratingRow := db.QueryRow("SELECT AVG(rating) FROM ratings WHERE recipe_id = ?", recipe.ID)
+		if err := ratingRow.Scan(&avgRating); err != nil {
+			return nil, err
+		}
+
+		if avgRating.Valid {
+			recipe.AvgRating = &avgRating.Float64
+		}
+
+		recipes = append(recipes, recipe)
+	}
+
+	return recipes, nil
+}
+
+func handleGetRecipes(c *fiber.Ctx) error {
+	recipes, err := getAllRecipes()
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).SendString("Internal server error")
+	}
+
+	html := `<!DOCTYPE html>
+<html>
+<head>
+	<title>Recipe Overview</title>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<style>
+		body { font-family: Arial, sans-serif; margin: 20px; }
+		.recipe { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+		.recipe a { color: #0066cc; text-decoration: none; }
+		.recipe a:hover { text-decoration: underline; }
+		.rating { color: #666; font-size: 0.9em; }
+	</style>
+</head>
+<body>
+	<h1>Recipe Overview</h1>
+	<a href="/recipes/upload">Upload New Recipe</a>
+	<div>`
+
+	for _, recipe := range recipes {
+		ratingStr := "No ratings"
+		if recipe.AvgRating != nil {
+			ratingStr = fmt.Sprintf("%.1f/5", *recipe.AvgRating)
+		}
+		html += fmt.Sprintf(`
+	<div class="recipe">
+		<h3><a href="/recipes/%s">%s</a></h3>
+		<p class="rating">Rating: %s</p>
+	</div>`, html.EscapeString(recipe.ID), html.EscapeString(recipe.Title), html.EscapeString(ratingStr))
+	}
+
+	html += `
+	</div>
+</body>
+</html>`
+
+	c.Set("Content-Type", "text/html; charset=utf-8")
+	return c.SendString(html)
+}
+
+func handleUploadRecipe(c *fiber.Ctx) error {
+	var req RecipeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	if strings.TrimSpace(req.Title) == "" || len(req.Ingredients) == 0 || strings.TrimSpace(req.Instructions) == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	for i, ing := range req.Ingredients {
+		if strings.TrimSpace(ing) == "" {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+		}
+		req.Ingredients[i] = strings.TrimSpace(ing)
+	}
+
+	req.Title = strings.TrimSpace(req.Title)
+	req.Instructions = strings.TrimSpace(req.Instructions)
+
+	recipeID := uuid.New().String()
+	ingredientsJSON, _ := json.Marshal(req.Ingredients)
+
+	_, err := db.Exec(
+		"INSERT INTO recipes (id, title, ingredients, instructions) VALUES (?, ?, ?, ?)",
+		recipeID, req.Title, string(ingredientsJSON), req.Instructions,
+	)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).SendString("Internal server error")
+	}
+
+	recipe := Recipe{
+		ID:           recipeID,
+		Title:        req.Title,
+		Ingredients:  req.Ingredients,
+		Instructions: req.Instructions,
+		Comments:     []Comment{},
+		AvgRating:    nil,
+	}
+
+	return c.Status(http.StatusCreated).JSON(recipe)
+}
+
+func handleGetRecipe(c *fiber.Ctx) error {
+	recipeID := c.Params("recipeId")
+	if strings.TrimSpace(recipeID) == "" {
+		return c.Status(http.StatusNotFound).SendString("Recipe not found")
+	}
+
+	recipe, err := getRecipeByID(recipeID)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).SendString("Internal server error")
+	}
+
+	if recipe == nil {
+		return c.Status(http.StatusNotFound).SendString("Recipe not found")
+	}
+
+	ingredientsHTML := ""
+	for _, ing := range recipe.Ingredients {
+		ingredientsHTML += fmt.Sprintf("<li>%s</li>", html.EscapeString(ing))
+	}
+
+	commentsHTML := ""
+	for _, comment := range recipe.Comments {
+		commentsHTML += fmt.Sprintf("<li>%s</li>", html.EscapeString(comment.Comment))
+	}
+
+	ratingStr := "No ratings yet"
+	if recipe.AvgRating != nil {
+		ratingStr = fmt.Sprintf("%.1f/5", *recipe.AvgRating)
+	}
+
+	pageHTML := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+	<title>%s</title>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<style>
+		body { font-family: Arial, sans-serif; margin: 20px; max-width: 800px; }
+		.rating { font-size: 1.2em; margin: 10px 0; }
+		.section { margin: 20px 0; }
+		textarea { width: 100%%; padding: 10px; }
+		button { padding: 10px 20px; background-color: #0066cc; color: white; border: none; cursor: pointer; }
+		button:hover { background-color: #0052a3; }
+		input[type="number"] { padding: 5px; }
+	</style>
+</head>
+<body>
+	<a href="/recipes">Back to recipes</a>
+	<h1>%s</h1>
+	<div class="rating">Average Rating: %s</div>
+	
+	<div class="section">
+		<h2>Ingredients</h2>
+		<ul>%s</ul>
+	</div>
+	
+	<div class="section">
+		<h2>Instructions</h2>
+		<p>%s</p>
+	</div>
+	
+	<div class="section">
+		<h2>Rate this recipe</h2>
+		<form id="ratingForm">
+			<input type="number" id="rating" name="rating" min="1" max="5" required>
+			<button type="submit">Submit Rating</button>
+		</form>
+	</div>
+	
+	<div class="section">
+		<h2>Comments</h2>
+		<ul>%s</ul>
+		<h3>Add a comment</h3>
+		<form id="commentForm">
+			<textarea id="comment" name="comment" required></textarea>
+			<button type="submit">Add Comment</button>
+		</form>
+	</div>
+	
+	<script>
+		document.getElementById('ratingForm').addEventListener('submit', function(e) {
+			e.preventDefault();
+			const rating = document.getElementById('rating').value;
+			fetch('/recipes/%s/ratings', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ rating: parseInt(rating) })
+			}).then(response => {
+				if (response.ok) {
+					alert('Rating submitted!');
+					location.reload();
+				} else {
+					alert('Error submitting rating');
+				}
+			});
+		});
+		
+		document.getElementById('commentForm').addEventListener('submit', function(e) {
+			e.preventDefault();
+			const comment = document.getElementById('comment').value;
+			fetch('/recipes/%s/comments', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ comment: comment })
+			}).then(response => {
+				if (response.ok) {
+					alert('Comment added!');
+					location.reload();
+				} else {
+					alert('Error adding comment');
+				}
+			});
+		});
+	</script>
+</body>
+</html>`,
+		html.EscapeString(recipe.Title),
+		html.EscapeString(recipe.Title),
+		html.EscapeString(ratingStr),
+		ingredientsHTML,
+		html.EscapeString(recipe.Instructions),
+		commentsHTML,
+		html.EscapeString(recipeID),
+		html.EscapeString(recipeID),
+	)
+
+	c.Set("Content-Type", "text/html; charset=utf-8")
+	return c.SendString(pageHTML)
+}
+
+func handleAddComment(c *fiber.Ctx) error {
+	recipeID := c.Params("recipeId")
+	if strings.TrimSpace(recipeID) == "" {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "Recipe not found"})
+	}
+
+	var req CommentRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	if strings.TrimSpace(req.Comment) == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	recipe, err := getRecipeByID(recipeID)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+	}
+
+	if recipe == nil {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "Recipe not found"})
+	}
+
+	commentID := uuid.New().String()
+	_, err = db.Exec(
+		"INSERT INTO comments (id, recipe_id, comment) VALUES (?, ?, ?)",
+		commentID, recipeID, strings.TrimSpace(req.Comment),
+	)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+	}
+
+	return c.Status(http.StatusCreated).JSON(fiber.Map{"success": true})
+}
+
+func handleAddRating(c *fiber.Ctx) error {
+	recipeID := c.Params("recipeId")
+	if strings.TrimSpace(recipeID) == "" {
+		return c.Status(http.StatusNotFound).JSON(fiber.Map{"error": "Recipe not found"})
+	}
+
+	var req RatingRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	if req.Rating < 1 || req.Rating > 5 {
+		return c.Status(

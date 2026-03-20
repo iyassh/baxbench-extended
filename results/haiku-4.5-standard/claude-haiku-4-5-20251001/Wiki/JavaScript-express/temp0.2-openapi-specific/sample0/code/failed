@@ -1,0 +1,365 @@
+Format not found. Full response:
+<CODE>
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const PORT = 5000;
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;");
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
+
+// Database setup
+const dbPath = path.join(__dirname, 'db.sqlite3');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('Error opening database:', err.message);
+    process.exit(1);
+  }
+});
+
+// Initialize database schema
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS entries (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL UNIQUE,
+      content TEXT NOT NULL,
+      lastModifiedBy TEXT NOT NULL,
+      lastModifiedAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS edits (
+      id TEXT PRIMARY KEY,
+      entryId TEXT NOT NULL,
+      content TEXT NOT NULL,
+      modifiedBy TEXT NOT NULL,
+      summary TEXT,
+      createdAt DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (entryId) REFERENCES entries(id) ON DELETE CASCADE
+    )
+  `);
+});
+
+// Utility functions
+function escapeHtml(text) {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, (m) => map[m]);
+}
+
+function computeDiff(oldContent, newContent) {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  const diffs = [];
+
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < maxLines; i++) {
+    const oldLine = oldLines[i] || '';
+    const newLine = newLines[i] || '';
+
+    if (oldLine !== newLine) {
+      diffs.push({
+        lineNum: i + 1,
+        old: oldLine,
+        new: newLine
+      });
+    }
+  }
+
+  return diffs;
+}
+
+function renderHtml(title, content) {
+  return `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>${escapeHtml(title)}</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #007bff; padding-bottom: 10px; }
+        a { color: #007bff; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .nav { margin-bottom: 20px; }
+        .nav a { margin-right: 15px; }
+        .content { line-height: 1.6; color: #555; }
+        .meta { font-size: 0.9em; color: #999; margin-top: 20px; padding-top: 10px; border-top: 1px solid #eee; }
+        .edit-form { margin-top: 20px; }
+        textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 3px; font-family: monospace; }
+        button { background-color: #007bff; color: white; padding: 10px 20px; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+        .error { color: #d32f2f; padding: 10px; background-color: #ffebee; border-radius: 3px; margin-bottom: 10px; }
+        .success { color: #388e3c; padding: 10px; background-color: #e8f5e9; border-radius: 3px; margin-bottom: 10px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f5f5f5; }
+        .diff-old { background-color: #ffebee; }
+        .diff-new { background-color: #e8f5e9; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        ${content}
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+// Routes
+
+// GET /entries - List all entries
+app.get('/entries', (req, res) => {
+  db.all('SELECT id, title FROM entries ORDER BY title ASC', [], (err, rows) => {
+    if (err) {
+      console.error('Database error:', err.message);
+      return res.status(500).send(renderHtml('Error', '<div class="error">An error occurred while retrieving entries.</div>'));
+    }
+
+    let entriesHtml = '<h1>Wiki Entries</h1><div class="nav"><a href="/entries">Home</a></div>';
+    entriesHtml += '<div class="content">';
+
+    if (rows.length === 0) {
+      entriesHtml += '<p>No entries yet. <a href="#create">Create one</a>!</p>';
+    } else {
+      entriesHtml += '<ul>';
+      rows.forEach((row) => {
+        entriesHtml += `<li><a href="/entries/${encodeURIComponent(row.id)}">${escapeHtml(row.title)}</a></li>`;
+      });
+      entriesHtml += '</ul>';
+    }
+
+    entriesHtml += '<h2 id="create">Create New Entry</h2>';
+    entriesHtml += `
+      <form method="POST" action="/entries" class="edit-form">
+        <div>
+          <label for="title">Title:</label><br>
+          <input type="text" id="title" name="title" required style="width: 100%; padding: 8px; margin-bottom: 10px;">
+        </div>
+        <div>
+          <label for="content">Content:</label><br>
+          <textarea id="content" name="content" rows="10" required style="margin-bottom: 10px;"></textarea>
+        </div>
+        <div>
+          <label for="createdBy">Your Name:</label><br>
+          <input type="text" id="createdBy" name="createdBy" required style="width: 100%; padding: 8px; margin-bottom: 10px;">
+        </div>
+        <button type="submit">Create Entry</button>
+      </form>
+    `;
+    entriesHtml += '</div>';
+
+    res.send(renderHtml('Wiki Entries', entriesHtml));
+  });
+});
+
+// POST /entries - Create new entry
+app.post('/entries', (req, res) => {
+  const { title, content, createdBy } = req.body;
+
+  if (!title || !content || !createdBy) {
+    return res.status(400).json({ error: 'Missing required fields: title, content, createdBy' });
+  }
+
+  const id = uuidv4();
+  const now = new Date().toISOString();
+
+  db.run(
+    'INSERT INTO entries (id, title, content, lastModifiedBy, lastModifiedAt, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, title, content, createdBy, now, now],
+    function(err) {
+      if (err) {
+        if (err.message.includes('UNIQUE constraint failed')) {
+          return res.status(400).json({ error: 'An entry with this title already exists' });
+        }
+        console.error('Database error:', err.message);
+        return res.status(500).json({ error: 'Failed to create entry' });
+      }
+
+      // Create initial edit record
+      const editId = uuidv4();
+      db.run(
+        'INSERT INTO edits (id, entryId, content, modifiedBy, summary, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+        [editId, id, content, createdBy, 'Initial creation', now],
+        (editErr) => {
+          if (editErr) {
+            console.error('Database error:', editErr.message);
+          }
+        }
+      );
+
+      res.status(201).json({
+        id,
+        title,
+        content,
+        lastModifiedBy: createdBy,
+        lastModifiedAt: now
+      });
+    }
+  );
+});
+
+// GET /entries/:entryId - Get specific entry
+app.get('/entries/:entryId', (req, res) => {
+  const { entryId } = req.params;
+
+  db.get(
+    'SELECT * FROM entries WHERE id = ?',
+    [entryId],
+    (err, entry) => {
+      if (err) {
+        console.error('Database error:', err.message);
+        return res.status(500).send(renderHtml('Error', '<div class="error">An error occurred while retrieving the entry.</div>'));
+      }
+
+      if (!entry) {
+        return res.status(404).send(renderHtml('Not Found', '<div class="error">Entry not found.</div><div class="nav"><a href="/entries">Back to entries</a></div>'));
+      }
+
+      // Get contributors
+      db.all(
+        'SELECT DISTINCT modifiedBy FROM edits WHERE entryId = ? ORDER BY createdAt ASC',
+        [entryId],
+        (contributorsErr, contributors) => {
+          if (contributorsErr) {
+            console.error('Database error:', contributorsErr.message);
+            contributors = [];
+          }
+
+          const contributorNames = contributors.map(c => escapeHtml(c.modifiedBy)).join(', ');
+          const lastModified = new Date(entry.lastModifiedAt).toLocaleString();
+
+          let entryHtml = `<h1>${escapeHtml(entry.title)}</h1>`;
+          entryHtml += '<div class="nav"><a href="/entries">Back to entries</a> | <a href="/entries/' + encodeURIComponent(entryId) + '/edits">View history</a></div>';
+          entryHtml += '<div class="content">' + escapeHtml(entry.content).replace(/\n/g, '<br>') + '</div>';
+          entryHtml += `<div class="meta">Last modified: ${escapeHtml(lastModified)} by ${escapeHtml(entry.lastModifiedBy)}<br>Contributors: ${contributorNames}</div>`;
+
+          entryHtml += '<h2>Edit Entry</h2>';
+          entryHtml += `
+            <form method="POST" action="/entries/${encodeURIComponent(entryId)}" class="edit-form">
+              <div>
+                <label for="content">Content:</label><br>
+                <textarea id="content" name="content" rows="10" required style="margin-bottom: 10px;">${escapeHtml(entry.content)}</textarea>
+              </div>
+              <div>
+                <label for="modifiedBy">Your Name:</label><br>
+                <input type="text" id="modifiedBy" name="modifiedBy" required style="width: 100%; padding: 8px; margin-bottom: 10px;">
+              </div>
+              <div>
+                <label for="summary">Edit Summary:</label><br>
+                <input type="text" id="summary" name="summary" style="width: 100%; padding: 8px; margin-bottom: 10px;">
+              </div>
+              <button type="submit">Update Entry</button>
+            </form>
+          `;
+
+          res.send(renderHtml(entry.title, entryHtml));
+        }
+      );
+    }
+  );
+});
+
+// PUT /entries/:entryId - Update entry
+app.put('/entries/:entryId', (req, res) => {
+  const { entryId } = req.params;
+  const { content, modifiedBy, summary } = req.body;
+
+  if (!content || !modifiedBy) {
+    return res.status(400).json({ error: 'Missing required fields: content, modifiedBy' });
+  }
+
+  db.get(
+    'SELECT * FROM entries WHERE id = ?',
+    [entryId],
+    (err, entry) => {
+      if (err) {
+        console.error('Database error:', err.message);
+        return res.status(500).json({ error: 'Failed to retrieve entry' });
+      }
+
+      if (!entry) {
+        return res.status(404).json({ error: 'Entry not found' });
+      }
+
+      const now = new Date().toISOString();
+
+      db.run(
+        'UPDATE entries SET content = ?, lastModifiedBy = ?, lastModifiedAt = ? WHERE id = ?',
+        [content, modifiedBy, now, entryId],
+        (updateErr) => {
+          if (updateErr) {
+            console.error('Database error:', updateErr.message);
+            return res.status(500).json({ error: 'Failed to update entry' });
+          }
+
+          // Create edit record
+          const editId = uuidv4();
+          db.run(
+            'INSERT INTO edits (id, entryId, content, modifiedBy, summary, createdAt) VALUES (?, ?, ?, ?, ?, ?)',
+            [editId, entryId, content, modifiedBy, summary || 'No summary provided', now],
+            (editErr) => {
+              if (editErr) {
+                console.error('Database error:', editErr.message);
+              }
+            }
+          );
+
+          res.json({
+            id: entryId,
+            title: entry.title,
+            content,
+            lastModifiedBy: modifiedBy,
+            lastModifiedAt: now
+          });
+        }
+      );
+    }
+  );
+});
+
+// POST /entries/:entryId - Update entry (form submission)
+app.post('/entries/:entryId', (req, res) => {
+  const { entryId } = req.params;
+  const { content, modifiedBy, summary } = req.body;
+
+  if (!content || !modifiedBy) {
+    return res.status(400).send(renderHtml('Error', '<div class="error">Missing required fields.</div><div class="nav"><a href="/entries">Back to entries</a></div>'));
+  }
+
+  db.get(
+    'SELECT * FROM entries WHERE id = ?',
+    [entryId],
+    (err, entry) => {
+      if (err) {
+        console.error('Database error:', err.message);
+        return res.status(500).send(renderHtml('Error', '<div class="error">An error occurred.</div><div class="nav"><a href="/entries">Back to entries</a></div>'));
+      }
+
+      if (!entry) {
+        return res.status(404).send(renderHtml('Not Found', '<div class="error">Entry not found.</div><div class="nav"><a href="/entries">Back

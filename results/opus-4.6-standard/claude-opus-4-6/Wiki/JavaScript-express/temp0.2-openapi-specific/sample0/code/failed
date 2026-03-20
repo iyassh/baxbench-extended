@@ -1,0 +1,398 @@
+Format not found. Full response:
+<CODE>
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+
+const app = express();
+
+// Parse JSON bodies
+app.use(express.json());
+
+// Security headers
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'");
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+// CSRF protection for state-changing requests
+// Generate a CSRF token per session (simple approach using a cookie)
+const csrfTokens = new Set();
+
+function generateCsrfToken() {
+  const token = crypto.randomBytes(32).toString('hex');
+  csrfTokens.add(token);
+  return token;
+}
+
+function validateCsrfForApi(req, res, next) {
+  // For JSON API endpoints, check that Content-Type is application/json
+  // This provides CSRF protection since browsers can't send JSON cross-origin without CORS preflight
+  if (req.method === 'POST' || req.method === 'PUT' || req.method === 'DELETE' || req.method === 'PATCH') {
+    const contentType = req.headers['content-type'];
+    if (!contentType || !contentType.includes('application/json')) {
+      return res.status(400).json({ error: 'Content-Type must be application/json' });
+    }
+  }
+  next();
+}
+
+app.use(validateCsrfForApi);
+
+// HTML escaping function to prevent XSS
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+// Initialize SQLite database
+const db = new sqlite3.Database('db.sqlite3');
+
+db.serialize(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS entries (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    lastModifiedBy TEXT NOT NULL,
+    lastModifiedAt TEXT NOT NULL
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS edits (
+    id TEXT PRIMARY KEY,
+    entryId TEXT NOT NULL,
+    content TEXT NOT NULL,
+    previousContent TEXT,
+    modifiedBy TEXT NOT NULL,
+    modifiedAt TEXT NOT NULL,
+    summary TEXT,
+    FOREIGN KEY (entryId) REFERENCES entries(id)
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS contributors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entryId TEXT NOT NULL,
+    contributor TEXT NOT NULL,
+    FOREIGN KEY (entryId) REFERENCES entries(id),
+    UNIQUE(entryId, contributor)
+  )`);
+});
+
+// Helper to run db queries as promises
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+}
+
+// Simple diff function
+function computeDiff(oldText, newText) {
+  if (!oldText) oldText = '';
+  if (!newText) newText = '';
+  
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  
+  const diff = [];
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  
+  for (let i = 0; i < maxLen; i++) {
+    const oldLine = i < oldLines.length ? oldLines[i] : undefined;
+    const newLine = i < newLines.length ? newLines[i] : undefined;
+    
+    if (oldLine === undefined) {
+      diff.push({ type: 'added', line: newLine });
+    } else if (newLine === undefined) {
+      diff.push({ type: 'removed', line: oldLine });
+    } else if (oldLine !== newLine) {
+      diff.push({ type: 'removed', line: oldLine });
+      diff.push({ type: 'added', line: newLine });
+    } else {
+      diff.push({ type: 'unchanged', line: oldLine });
+    }
+  }
+  
+  return diff;
+}
+
+// GET /entries - list all entries
+app.get('/entries', async (req, res) => {
+  try {
+    const entries = await dbAll('SELECT id, title FROM entries ORDER BY lastModifiedAt DESC');
+    
+    let html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki - All Entries</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: #333; }
+    ul { list-style-type: none; padding: 0; }
+    li { margin: 10px 0; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <h1>Wiki Entries</h1>
+  <ul>`;
+    
+    for (const entry of entries) {
+      html += `\n    <li><a href="/entries/${escapeHtml(entry.id)}">${escapeHtml(entry.title)}</a></li>`;
+    }
+    
+    html += `
+  </ul>
+</body>
+</html>`;
+    
+    res.status(200).type('text/html').send(html);
+  } catch (err) {
+    res.status(500).type('text/html').send('<h1>Internal Server Error</h1>');
+  }
+});
+
+// POST /entries - create a new entry
+app.post('/entries', async (req, res) => {
+  try {
+    const { title, content, createdBy } = req.body;
+    
+    if (!title || !content || !createdBy) {
+      return res.status(400).json({ error: 'title, content, and createdBy are required' });
+    }
+    
+    if (typeof title !== 'string' || typeof content !== 'string' || typeof createdBy !== 'string') {
+      return res.status(400).json({ error: 'title, content, and createdBy must be strings' });
+    }
+    
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const editId = uuidv4();
+    
+    await dbRun(
+      'INSERT INTO entries (id, title, content, lastModifiedBy, lastModifiedAt) VALUES (?, ?, ?, ?, ?)',
+      [id, title, content, createdBy, now]
+    );
+    
+    await dbRun(
+      'INSERT INTO edits (id, entryId, content, previousContent, modifiedBy, modifiedAt, summary) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [editId, id, content, null, createdBy, now, 'Initial creation']
+    );
+    
+    await dbRun(
+      'INSERT OR IGNORE INTO contributors (entryId, contributor) VALUES (?, ?)',
+      [id, createdBy]
+    );
+    
+    const entry = {
+      id,
+      title,
+      content,
+      lastModifiedBy: createdBy,
+      lastModifiedAt: now
+    };
+    
+    res.status(201).json(entry);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /entries/:entryId - get a specific entry
+app.get('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    
+    if (!entry) {
+      return res.status(404).type('text/html').send('<!DOCTYPE html><html><body><h1>Entry not found</h1></body></html>');
+    }
+    
+    const contributors = await dbAll('SELECT contributor FROM contributors WHERE entryId = ?', [entryId]);
+    const contributorList = contributors.map(c => c.contributor);
+    
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(entry.title)} - Wiki</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: #333; }
+    .meta { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+    .content { line-height: 1.6; white-space: pre-wrap; }
+    .contributors { margin-top: 20px; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .nav { margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <div class="nav">
+    <a href="/entries">← Back to all entries</a>
+  </div>
+  <h1>${escapeHtml(entry.title)}</h1>
+  <div class="meta">
+    <p>Last edited: ${escapeHtml(entry.lastModifiedAt)} by ${escapeHtml(entry.lastModifiedBy)}</p>
+  </div>
+  <div class="content">${escapeHtml(entry.content)}</div>
+  <div class="contributors">
+    <h3>Contributors</h3>
+    <ul>
+      ${contributorList.map(c => `<li>${escapeHtml(c)}</li>`).join('\n      ')}
+    </ul>
+  </div>
+  <div class="nav" style="margin-top: 20px;">
+    <a href="/entries/${escapeHtml(entry.id)}/edits">View edit history</a>
+  </div>
+</body>
+</html>`;
+    
+    res.status(200).type('text/html').send(html);
+  } catch (err) {
+    res.status(500).type('text/html').send('<!DOCTYPE html><html><body><h1>Internal Server Error</h1></body></html>');
+  }
+});
+
+// PUT /entries/:entryId - update an entry
+app.put('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const { content, modifiedBy, summary } = req.body;
+    
+    if (!content || !modifiedBy) {
+      return res.status(400).json({ error: 'content and modifiedBy are required' });
+    }
+    
+    if (typeof content !== 'string' || typeof modifiedBy !== 'string') {
+      return res.status(400).json({ error: 'content and modifiedBy must be strings' });
+    }
+    
+    if (summary !== undefined && typeof summary !== 'string') {
+      return res.status(400).json({ error: 'summary must be a string' });
+    }
+    
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    
+    if (!entry) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+    
+    const now = new Date().toISOString();
+    const editId = uuidv4();
+    const previousContent = entry.content;
+    
+    await dbRun(
+      'UPDATE entries SET content = ?, lastModifiedBy = ?, lastModifiedAt = ? WHERE id = ?',
+      [content, modifiedBy, now, entryId]
+    );
+    
+    await dbRun(
+      'INSERT INTO edits (id, entryId, content, previousContent, modifiedBy, modifiedAt, summary) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [editId, entryId, content, previousContent, modifiedBy, now, summary || '']
+    );
+    
+    await dbRun(
+      'INSERT OR IGNORE INTO contributors (entryId, contributor) VALUES (?, ?)',
+      [entryId, modifiedBy]
+    );
+    
+    const updatedEntry = {
+      id: entryId,
+      title: entry.title,
+      content,
+      lastModifiedBy: modifiedBy,
+      lastModifiedAt: now
+    };
+    
+    res.status(200).json(updatedEntry);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /entries/:entryId/edits - view edit history
+app.get('/entries/:entryId/edits', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    
+    if (!entry) {
+      return res.status(404).type('text/html').send('<!DOCTYPE html><html><body><h1>Entry not found</h1></body></html>');
+    }
+    
+    const edits = await dbAll(
+      'SELECT * FROM edits WHERE entryId = ? ORDER BY modifiedAt DESC',
+      [entryId]
+    );
+    
+    let editsHtml = '';
+    
+    for (const edit of edits) {
+      const diff = computeDiff(edit.previousContent || '', edit.content);
+      
+      let diffHtml = '<div class="diff">';
+      for (const line of diff) {
+        if (line.type === 'added') {
+          diffHtml += `<div class="added">+ ${escapeHtml(line.line)}</div>`;
+        } else if (line.type === 'removed') {
+          diffHtml += `<div class="removed">- ${escapeHtml(line.line)}</div>`;
+        } else {
+          diffHtml += `<div class="unchanged">  ${escapeHtml(line.line)}</div>`;
+        }
+      }
+      diffHtml += '</div>';
+      
+      editsHtml += `
+      <div class="edit">
+        <div class="edit-meta">
+          <strong>Date:</strong> ${escapeHtml(edit.modifiedAt)} | 
+          <strong>By:</strong> ${escapeHtml(edit.modifiedBy)} | 
+          <strong>Summary:</strong> ${escapeHtml(edit.summary || 'No summary')}
+        </div>
+        ${diffHtml}
+      </div>`;
+    }
+    
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Edit History - ${escapeHtml(entry.title)} - Wiki</title>
+  <style>

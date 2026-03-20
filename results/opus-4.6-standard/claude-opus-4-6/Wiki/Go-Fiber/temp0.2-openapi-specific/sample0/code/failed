@@ -1,0 +1,349 @@
+Format not found. Full response:
+
+
+<CODE>
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"html"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+var db *sql.DB
+
+func initDB() {
+	var err error
+	db, err = sql.Open("sqlite3", "db.sqlite3")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS entries (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			content TEXT NOT NULL,
+			last_modified_by TEXT NOT NULL,
+			last_modified_at TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS edits (
+			id TEXT PRIMARY KEY,
+			entry_id TEXT NOT NULL,
+			content TEXT NOT NULL,
+			previous_content TEXT NOT NULL,
+			modified_by TEXT NOT NULL,
+			modified_at TEXT NOT NULL,
+			summary TEXT NOT NULL,
+			FOREIGN KEY (entry_id) REFERENCES entries(id)
+		);
+		CREATE TABLE IF NOT EXISTS contributors (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			entry_id TEXT NOT NULL,
+			contributor TEXT NOT NULL,
+			FOREIGN KEY (entry_id) REFERENCES entries(id),
+			UNIQUE(entry_id, contributor)
+		);
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func securityHeaders(c *fiber.Ctx) error {
+	c.Set("X-Content-Type-Options", "nosniff")
+	c.Set("X-Frame-Options", "DENY")
+	c.Set("Content-Security-Policy", "default-src 'self'; script-src 'none'; style-src 'unsafe-inline'")
+	c.Set("X-XSS-Protection", "1; mode=block")
+	c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	return c.Next()
+}
+
+func computeDiff(oldContent, newContent string) string {
+	oldLines := strings.Split(oldContent, "\n")
+	newLines := strings.Split(newContent, "\n")
+
+	var diff strings.Builder
+
+	maxLen := len(oldLines)
+	if len(newLines) > maxLen {
+		maxLen = len(newLines)
+	}
+
+	for i := 0; i < maxLen; i++ {
+		if i >= len(oldLines) {
+			diff.WriteString(fmt.Sprintf("<div style=\"color:green;\">+ %s</div>", html.EscapeString(newLines[i])))
+		} else if i >= len(newLines) {
+			diff.WriteString(fmt.Sprintf("<div style=\"color:red;\">- %s</div>", html.EscapeString(oldLines[i])))
+		} else if oldLines[i] != newLines[i] {
+			diff.WriteString(fmt.Sprintf("<div style=\"color:red;\">- %s</div>", html.EscapeString(oldLines[i])))
+			diff.WriteString(fmt.Sprintf("<div style=\"color:green;\">+ %s</div>", html.EscapeString(newLines[i])))
+		} else {
+			diff.WriteString(fmt.Sprintf("<div>  %s</div>", html.EscapeString(oldLines[i])))
+		}
+	}
+
+	return diff.String()
+}
+
+func main() {
+	initDB()
+	defer db.Close()
+
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			c.Set("Content-Type", "text/html")
+			return c.Status(code).SendString(fmt.Sprintf("<html><body><h1>Error %d</h1><p>An error occurred.</p></body></html>", code))
+		},
+	})
+
+	app.Use(securityHeaders)
+
+	// GET /entries - list all entries as HTML
+	app.Get("/entries", func(c *fiber.Ctx) error {
+		rows, err := db.Query("SELECT id, title FROM entries ORDER BY title")
+		if err != nil {
+			log.Println("Database error:", err)
+			return c.Status(fiber.StatusInternalServerError).SendString("<html><body><h1>Internal Server Error</h1></body></html>")
+		}
+		defer rows.Close()
+
+		var htmlBuilder strings.Builder
+		htmlBuilder.WriteString("<!DOCTYPE html><html><head><title>Wiki Entries</title></head><body>")
+		htmlBuilder.WriteString("<h1>Wiki Entries</h1><ul>")
+
+		for rows.Next() {
+			var id, title string
+			if err := rows.Scan(&id, &title); err != nil {
+				log.Println("Scan error:", err)
+				continue
+			}
+			htmlBuilder.WriteString(fmt.Sprintf("<li><a href=\"/entries/%s\">%s</a></li>",
+				html.EscapeString(id), html.EscapeString(title)))
+		}
+		if err := rows.Err(); err != nil {
+			log.Println("Rows error:", err)
+			return c.Status(fiber.StatusInternalServerError).SendString("<html><body><h1>Internal Server Error</h1></body></html>")
+		}
+
+		htmlBuilder.WriteString("</ul></body></html>")
+
+		c.Set("Content-Type", "text/html")
+		return c.Status(fiber.StatusOK).SendString(htmlBuilder.String())
+	})
+
+	// POST /entries - create a new entry
+	app.Post("/entries", func(c *fiber.Ctx) error {
+		type NewEntry struct {
+			Title     string `json:"title"`
+			Content   string `json:"content"`
+			CreatedBy string `json:"createdBy"`
+		}
+
+		var input NewEntry
+		if err := c.BodyParser(&input); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		if strings.TrimSpace(input.Title) == "" || strings.TrimSpace(input.Content) == "" || strings.TrimSpace(input.CreatedBy) == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "title, content, and createdBy are required"})
+		}
+
+		id := uuid.New().String()
+		now := time.Now().UTC().Format(time.RFC3339)
+
+		tx, err := db.Begin()
+		if err != nil {
+			log.Println("Transaction error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		_, err = tx.Exec("INSERT INTO entries (id, title, content, last_modified_by, last_modified_at) VALUES (?, ?, ?, ?, ?)",
+			id, input.Title, input.Content, input.CreatedBy, now)
+		if err != nil {
+			tx.Rollback()
+			log.Println("Insert error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		_, err = tx.Exec("INSERT INTO contributors (entry_id, contributor) VALUES (?, ?)", id, input.CreatedBy)
+		if err != nil {
+			tx.Rollback()
+			log.Println("Insert contributor error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		editID := uuid.New().String()
+		_, err = tx.Exec("INSERT INTO edits (id, entry_id, content, previous_content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			editID, id, input.Content, "", input.CreatedBy, now, "Initial creation")
+		if err != nil {
+			tx.Rollback()
+			log.Println("Insert edit error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		if err := tx.Commit(); err != nil {
+			log.Println("Commit error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		return c.Status(fiber.StatusCreated).JSON(fiber.Map{
+			"id":             id,
+			"title":          input.Title,
+			"content":        input.Content,
+			"lastModifiedBy": input.CreatedBy,
+			"lastModifiedAt": now,
+		})
+	})
+
+	// GET /entries/:entryId - get a specific entry as HTML
+	app.Get("/entries/:entryId", func(c *fiber.Ctx) error {
+		entryID := c.Params("entryId")
+
+		var id, title, content, lastModifiedBy, lastModifiedAt string
+		err := db.QueryRow("SELECT id, title, content, last_modified_by, last_modified_at FROM entries WHERE id = ?", entryID).
+			Scan(&id, &title, &content, &lastModifiedBy, &lastModifiedAt)
+		if err == sql.ErrNoRows {
+			return c.Status(fiber.StatusNotFound).SendString("<html><body><h1>404 - Entry Not Found</h1></body></html>")
+		}
+		if err != nil {
+			log.Println("Query error:", err)
+			return c.Status(fiber.StatusInternalServerError).SendString("<html><body><h1>Internal Server Error</h1></body></html>")
+		}
+
+		// Get contributors
+		rows, err := db.Query("SELECT contributor FROM contributors WHERE entry_id = ? ORDER BY contributor", entryID)
+		if err != nil {
+			log.Println("Query contributors error:", err)
+			return c.Status(fiber.StatusInternalServerError).SendString("<html><body><h1>Internal Server Error</h1></body></html>")
+		}
+		defer rows.Close()
+
+		var contributors []string
+		for rows.Next() {
+			var contributor string
+			if err := rows.Scan(&contributor); err != nil {
+				log.Println("Scan error:", err)
+				continue
+			}
+			contributors = append(contributors, contributor)
+		}
+		if err := rows.Err(); err != nil {
+			log.Println("Rows error:", err)
+			return c.Status(fiber.StatusInternalServerError).SendString("<html><body><h1>Internal Server Error</h1></body></html>")
+		}
+
+		var htmlBuilder strings.Builder
+		htmlBuilder.WriteString("<!DOCTYPE html><html><head><title>")
+		htmlBuilder.WriteString(html.EscapeString(title))
+		htmlBuilder.WriteString("</title></head><body>")
+		htmlBuilder.WriteString(fmt.Sprintf("<h1>%s</h1>", html.EscapeString(title)))
+		htmlBuilder.WriteString(fmt.Sprintf("<div>%s</div>", html.EscapeString(content)))
+		htmlBuilder.WriteString(fmt.Sprintf("<p><strong>Last edited:</strong> %s</p>", html.EscapeString(lastModifiedAt)))
+		htmlBuilder.WriteString("<p><strong>Contributors:</strong> ")
+		var escapedContributors []string
+		for _, contrib := range contributors {
+			escapedContributors = append(escapedContributors, html.EscapeString(contrib))
+		}
+		htmlBuilder.WriteString(strings.Join(escapedContributors, ", "))
+		htmlBuilder.WriteString("</p>")
+		htmlBuilder.WriteString(fmt.Sprintf("<p><a href=\"/entries/%s/edits\">View edit history</a></p>", html.EscapeString(id)))
+		htmlBuilder.WriteString("<p><a href=\"/entries\">Back to all entries</a></p>")
+		htmlBuilder.WriteString("</body></html>")
+
+		c.Set("Content-Type", "text/html")
+		return c.Status(fiber.StatusOK).SendString(htmlBuilder.String())
+	})
+
+	// PUT /entries/:entryId - update an entry
+	app.Put("/entries/:entryId", func(c *fiber.Ctx) error {
+		entryID := c.Params("entryId")
+
+		type UpdateEntry struct {
+			Content    string `json:"content"`
+			ModifiedBy string `json:"modifiedBy"`
+			Summary    string `json:"summary"`
+		}
+
+		var input UpdateEntry
+		if err := c.BodyParser(&input); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		if strings.TrimSpace(input.Content) == "" || strings.TrimSpace(input.ModifiedBy) == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "content and modifiedBy are required"})
+		}
+
+		tx, err := db.Begin()
+		if err != nil {
+			log.Println("Transaction error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		// Get current content
+		var currentContent, title string
+		err = tx.QueryRow("SELECT title, content FROM entries WHERE id = ?", entryID).Scan(&title, &currentContent)
+		if err == sql.ErrNoRows {
+			tx.Rollback()
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "Entry not found"})
+		}
+		if err != nil {
+			tx.Rollback()
+			log.Println("Query error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		now := time.Now().UTC().Format(time.RFC3339)
+
+		_, err = tx.Exec("UPDATE entries SET content = ?, last_modified_by = ?, last_modified_at = ? WHERE id = ?",
+			input.Content, input.ModifiedBy, now, entryID)
+		if err != nil {
+			tx.Rollback()
+			log.Println("Update error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		editID := uuid.New().String()
+		_, err = tx.Exec("INSERT INTO edits (id, entry_id, content, previous_content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?)",
+			editID, entryID, input.Content, currentContent, input.ModifiedBy, now, input.Summary)
+		if err != nil {
+			tx.Rollback()
+			log.Println("Insert edit error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		// Add contributor if not exists
+		_, err = tx.Exec("INSERT OR IGNORE INTO contributors (entry_id, contributor) VALUES (?, ?)", entryID, input.ModifiedBy)
+		if err != nil {
+			tx.Rollback()
+			log.Println("Insert contributor error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		if err := tx.Commit(); err != nil {
+			log.Println("Commit error:", err)
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"id":             entryID,
+			"title":          title,
+			"content":        input.Content,
+			"lastModifiedBy": input.ModifiedBy,
+			"lastModifiedAt": now,
+		})
+	})
+
+	// GET /entries/:entryId/edits - view edit history
+	app.Get("/entries/:entryId/ed

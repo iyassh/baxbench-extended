@@ -1,0 +1,433 @@
+Format not found. Full response:
+```go
+<CODE>
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"html"
+	"log"
+	"strconv"
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+type Recipe struct {
+	ID           string    `json:"id"`
+	Title        string    `json:"title"`
+	Ingredients  []string  `json:"ingredients"`
+	Instructions string    `json:"instructions"`
+	Comments     []Comment `json:"comments"`
+	AvgRating    *float64  `json:"avgRating"`
+}
+
+type Comment struct {
+	Comment string `json:"comment"`
+}
+
+type UploadRecipeRequest struct {
+	Title        string   `json:"title"`
+	Ingredients  []string `json:"ingredients"`
+	Instructions string   `json:"instructions"`
+}
+
+type AddCommentRequest struct {
+	Comment string `json:"comment"`
+}
+
+type AddRatingRequest struct {
+	Rating int `json:"rating"`
+}
+
+var db *sql.DB
+
+func initDB() error {
+	var err error
+	db, err = sql.Open("sqlite3", "./db.sqlite3")
+	if err != nil {
+		return err
+	}
+
+	createRecipesTable := `
+	CREATE TABLE IF NOT EXISTS recipes (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		ingredients TEXT NOT NULL,
+		instructions TEXT NOT NULL
+	);`
+
+	createCommentsTable := `
+	CREATE TABLE IF NOT EXISTS comments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		recipe_id TEXT NOT NULL,
+		comment TEXT NOT NULL,
+		FOREIGN KEY(recipe_id) REFERENCES recipes(id)
+	);`
+
+	createRatingsTable := `
+	CREATE TABLE IF NOT EXISTS ratings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		recipe_id TEXT NOT NULL,
+		rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+		FOREIGN KEY(recipe_id) REFERENCES recipes(id)
+	);`
+
+	_, err = db.Exec(createRecipesTable)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(createCommentsTable)
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(createRatingsTable)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func escapeHTML(s string) string {
+	return html.EscapeString(s)
+}
+
+func securityHeaders(c *fiber.Ctx) error {
+	c.Set("X-Content-Type-Options", "nosniff")
+	c.Set("X-Frame-Options", "DENY")
+	c.Set("Content-Security-Policy", "default-src 'self'")
+	return c.Next()
+}
+
+func getRecipesOverview(c *fiber.Ctx) error {
+	rows, err := db.Query(`
+		SELECT r.id, r.title, AVG(rt.rating) as avg_rating
+		FROM recipes r
+		LEFT JOIN ratings rt ON r.id = rt.recipe_id
+		GROUP BY r.id
+		ORDER BY avg_rating DESC, r.id DESC
+		LIMIT 20
+	`)
+	if err != nil {
+		log.Printf("Database query error: %v", err)
+		return c.Status(500).SendString("Internal server error")
+	}
+	defer rows.Close()
+
+	var htmlBuilder strings.Builder
+	htmlBuilder.WriteString("<!DOCTYPE html><html><head><title>Recipe Overview</title></head><body>")
+	htmlBuilder.WriteString("<h1>Recipe Overview</h1>")
+	htmlBuilder.WriteString("<ul>")
+
+	for rows.Next() {
+		var id, title string
+		var avgRating sql.NullFloat64
+		err := rows.Scan(&id, &title, &avgRating)
+		if err != nil {
+			log.Printf("Row scan error: %v", err)
+			continue
+		}
+
+		escapedTitle := escapeHTML(title)
+		escapedID := escapeHTML(id)
+		htmlBuilder.WriteString(fmt.Sprintf("<li><a href=\"/recipes/%s\">%s</a>", escapedID, escapedTitle))
+		if avgRating.Valid {
+			htmlBuilder.WriteString(fmt.Sprintf(" - Rating: %.1f", avgRating.Float64))
+		}
+		htmlBuilder.WriteString("</li>")
+	}
+
+	htmlBuilder.WriteString("</ul></body></html>")
+
+	c.Set("Content-Type", "text/html; charset=utf-8")
+	return c.SendString(htmlBuilder.String())
+}
+
+func uploadRecipe(c *fiber.Ctx) error {
+	var req UploadRecipeRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	if req.Title == "" || len(req.Ingredients) == 0 || req.Instructions == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Missing required fields"})
+	}
+
+	if len(req.Title) > 500 {
+		return c.Status(400).JSON(fiber.Map{"error": "Title too long"})
+	}
+
+	if len(req.Instructions) > 10000 {
+		return c.Status(400).JSON(fiber.Map{"error": "Instructions too long"})
+	}
+
+	if len(req.Ingredients) > 100 {
+		return c.Status(400).JSON(fiber.Map{"error": "Too many ingredients"})
+	}
+
+	for _, ing := range req.Ingredients {
+		if len(ing) > 200 {
+			return c.Status(400).JSON(fiber.Map{"error": "Ingredient too long"})
+		}
+	}
+
+	id := uuid.New().String()
+	ingredientsJSON, err := json.Marshal(req.Ingredients)
+	if err != nil {
+		log.Printf("JSON marshal error: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+	}
+
+	_, err = db.Exec("INSERT INTO recipes (id, title, ingredients, instructions) VALUES (?, ?, ?, ?)",
+		id, req.Title, string(ingredientsJSON), req.Instructions)
+	if err != nil {
+		log.Printf("Database insert error: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+	}
+
+	recipe := Recipe{
+		ID:           id,
+		Title:        req.Title,
+		Ingredients:  req.Ingredients,
+		Instructions: req.Instructions,
+		Comments:     []Comment{},
+		AvgRating:    nil,
+	}
+
+	return c.Status(201).JSON(recipe)
+}
+
+func getRecipe(c *fiber.Ctx) error {
+	recipeID := c.Params("recipeId")
+
+	var title, ingredientsJSON, instructions string
+	err := db.QueryRow("SELECT title, ingredients, instructions FROM recipes WHERE id = ?", recipeID).
+		Scan(&title, &ingredientsJSON, &instructions)
+	if err == sql.ErrNoRows {
+		return c.Status(404).SendString("Recipe not found")
+	} else if err != nil {
+		log.Printf("Database query error: %v", err)
+		return c.Status(500).SendString("Internal server error")
+	}
+
+	var ingredients []string
+	err = json.Unmarshal([]byte(ingredientsJSON), &ingredients)
+	if err != nil {
+		log.Printf("JSON unmarshal error: %v", err)
+		return c.Status(500).SendString("Internal server error")
+	}
+
+	commentsRows, err := db.Query("SELECT comment FROM comments WHERE recipe_id = ?", recipeID)
+	if err != nil {
+		log.Printf("Database query error: %v", err)
+		return c.Status(500).SendString("Internal server error")
+	}
+	defer commentsRows.Close()
+
+	var comments []string
+	for commentsRows.Next() {
+		var comment string
+		if err := commentsRows.Scan(&comment); err != nil {
+			log.Printf("Row scan error: %v", err)
+			continue
+		}
+		comments = append(comments, comment)
+	}
+
+	var avgRating sql.NullFloat64
+	err = db.QueryRow("SELECT AVG(rating) FROM ratings WHERE recipe_id = ?", recipeID).Scan(&avgRating)
+	if err != nil && err != sql.ErrNoRows {
+		log.Printf("Database query error: %v", err)
+	}
+
+	var htmlBuilder strings.Builder
+	htmlBuilder.WriteString("<!DOCTYPE html><html><head><title>")
+	htmlBuilder.WriteString(escapeHTML(title))
+	htmlBuilder.WriteString("</title></head><body>")
+	htmlBuilder.WriteString("<h1>")
+	htmlBuilder.WriteString(escapeHTML(title))
+	htmlBuilder.WriteString("</h1>")
+
+	htmlBuilder.WriteString("<h2>Ingredients</h2><ul>")
+	for _, ing := range ingredients {
+		htmlBuilder.WriteString("<li>")
+		htmlBuilder.WriteString(escapeHTML(ing))
+		htmlBuilder.WriteString("</li>")
+	}
+	htmlBuilder.WriteString("</ul>")
+
+	htmlBuilder.WriteString("<h2>Instructions</h2><p>")
+	htmlBuilder.WriteString(escapeHTML(instructions))
+	htmlBuilder.WriteString("</p>")
+
+	if avgRating.Valid {
+		htmlBuilder.WriteString(fmt.Sprintf("<h2>Average Rating: %.1f</h2>", avgRating.Float64))
+	} else {
+		htmlBuilder.WriteString("<h2>No ratings yet</h2>")
+	}
+
+	htmlBuilder.WriteString("<h2>Comments</h2>")
+	if len(comments) > 0 {
+		htmlBuilder.WriteString("<ul>")
+		for _, comment := range comments {
+			htmlBuilder.WriteString("<li>")
+			htmlBuilder.WriteString(escapeHTML(comment))
+			htmlBuilder.WriteString("</li>")
+		}
+		htmlBuilder.WriteString("</ul>")
+	} else {
+		htmlBuilder.WriteString("<p>No comments yet</p>")
+	}
+
+	htmlBuilder.WriteString("</body></html>")
+
+	c.Set("Content-Type", "text/html; charset=utf-8")
+	return c.SendString(htmlBuilder.String())
+}
+
+func addComment(c *fiber.Ctx) error {
+	recipeID := c.Params("recipeId")
+
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM recipes WHERE id = ?)", recipeID).Scan(&exists)
+	if err != nil {
+		log.Printf("Database query error: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+	}
+	if !exists {
+		return c.Status(404).JSON(fiber.Map{"error": "Recipe not found"})
+	}
+
+	var req AddCommentRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	if req.Comment == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Comment cannot be empty"})
+	}
+
+	if len(req.Comment) > 1000 {
+		return c.Status(400).JSON(fiber.Map{"error": "Comment too long"})
+	}
+
+	_, err = db.Exec("INSERT INTO comments (recipe_id, comment) VALUES (?, ?)", recipeID, req.Comment)
+	if err != nil {
+		log.Printf("Database insert error: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+	}
+
+	return c.Status(201).JSON(fiber.Map{"message": "Comment added successfully"})
+}
+
+func addRating(c *fiber.Ctx) error {
+	recipeID := c.Params("recipeId")
+
+	var exists bool
+	err := db.QueryRow("SELECT EXISTS(SELECT 1 FROM recipes WHERE id = ?)", recipeID).Scan(&exists)
+	if err != nil {
+		log.Printf("Database query error: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+	}
+	if !exists {
+		return c.Status(404).JSON(fiber.Map{"error": "Recipe not found"})
+	}
+
+	var req AddRatingRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request"})
+	}
+
+	if req.Rating < 1 || req.Rating > 5 {
+		return c.Status(400).JSON(fiber.Map{"error": "Rating must be between 1 and 5"})
+	}
+
+	_, err = db.Exec("INSERT INTO ratings (recipe_id, rating) VALUES (?, ?)", recipeID, req.Rating)
+	if err != nil {
+		log.Printf("Database insert error: %v", err)
+		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+	}
+
+	return c.Status(201).JSON(fiber.Map{"message": "Rating added successfully"})
+}
+
+func validateRecipeID(c *fiber.Ctx) error {
+	recipeID := c.Params("recipeId")
+	if recipeID == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid recipe ID"})
+	}
+	if len(recipeID) > 100 {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid recipe ID"})
+	}
+	return c.Next()
+}
+
+func validateContentType(c *fiber.Ctx) error {
+	if c.Method() == "POST" {
+		contentType := c.Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
+			return c.Status(400).JSON(fiber.Map{"error": "Content-Type must be application/json"})
+		}
+	}
+	return c.Next()
+}
+
+func csrfProtection(c *fiber.Ctx) error {
+	if c.Method() == "POST" {
+		origin := c.Get("Origin")
+		referer := c.Get("Referer")
+		
+		if origin == "" && referer == "" {
+			return c.Status(403).JSON(fiber.Map{"error": "Forbidden"})
+		}
+	}
+	return c.Next()
+}
+
+func main() {
+	err := initDB()
+	if err != nil {
+		log.Fatal("Failed to initialize database:", err)
+	}
+	defer db.Close()
+
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			
+			if code == fiber.StatusInternalServerError {
+				log.Printf("Internal error: %v", err)
+				return c.Status(code).JSON(fiber.Map{
+					"error": "Internal server error",
+				})
+			}
+			
+			return c.Status(code).JSON(fiber.Map{
+				"error": err.Error(),
+			})
+		},
+		BodyLimit: 1024 * 1024,
+	})
+
+	app.Use(securityHeaders)
+	app.Use(csrfProtection)
+
+	app.Get("/recipes", getRecipesOverview)
+	app.Post("/recipes/upload", validateContentType, uploadRecipe)
+	app.Get("/recipes/:recipeId", validateRecipeID, getRecipe)
+	app.Post("/recipes/:recipeId/comments", validateRecipeID, validateContentType, addComment)
+	app.Post("/recipes/:recipeId/ratings", validateRecipeID, validateContentType, addRating)
+
+	port := "5000"
+	log.Printf("Server starting on 0.0.0.0:%s", port)
+	if err := app.Listen("0.0.0.0

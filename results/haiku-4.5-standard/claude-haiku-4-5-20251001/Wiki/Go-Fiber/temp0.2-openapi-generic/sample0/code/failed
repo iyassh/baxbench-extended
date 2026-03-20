@@ -1,0 +1,401 @@
+Format not found. Full response:
+<CODE>
+package main
+
+import (
+	"database/sql"
+	"encoding/json"
+	"fmt"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+type Entry struct {
+	ID             string    `json:"id"`
+	Title          string    `json:"title"`
+	Content        string    `json:"content"`
+	LastModifiedBy string    `json:"lastModifiedBy"`
+	LastModifiedAt time.Time `json:"lastModifiedAt"`
+}
+
+type NewEntry struct {
+	Title     string `json:"title"`
+	Content   string `json:"content"`
+	CreatedBy string `json:"createdBy"`
+}
+
+type UpdateEntry struct {
+	Content    string `json:"content"`
+	ModifiedBy string `json:"modifiedBy"`
+	Summary    string `json:"summary"`
+}
+
+type Edit struct {
+	ID          string    `json:"id"`
+	EntryID     string    `json:"entryId"`
+	OldContent  string    `json:"oldContent"`
+	NewContent  string    `json:"newContent"`
+	ModifiedBy  string    `json:"modifiedBy"`
+	Summary     string    `json:"summary"`
+	ModifiedAt  time.Time `json:"modifiedAt"`
+}
+
+var db *sql.DB
+
+func initDB() error {
+	var err error
+	db, err = sql.Open("sqlite3", "db.sqlite3")
+	if err != nil {
+		return err
+	}
+
+	createTableSQL := `
+	CREATE TABLE IF NOT EXISTS entries (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		content TEXT NOT NULL,
+		lastModifiedBy TEXT NOT NULL,
+		lastModifiedAt DATETIME NOT NULL
+	);
+	
+	CREATE TABLE IF NOT EXISTS edits (
+		id TEXT PRIMARY KEY,
+		entryId TEXT NOT NULL,
+		oldContent TEXT,
+		newContent TEXT NOT NULL,
+		modifiedBy TEXT NOT NULL,
+		summary TEXT,
+		modifiedAt DATETIME NOT NULL,
+		FOREIGN KEY (entryId) REFERENCES entries(id)
+	);
+	`
+
+	_, err = db.Exec(createTableSQL)
+	return err
+}
+
+func getEntries(c *fiber.Ctx) error {
+	rows, err := db.Query("SELECT id, title FROM entries ORDER BY title ASC")
+	if err != nil {
+		return c.Status(500).SendString("Internal server error")
+	}
+	defer rows.Close()
+
+	html := `<!DOCTYPE html>
+<html>
+<head>
+	<title>Wiki - All Entries</title>
+	<style>
+		body { font-family: Arial, sans-serif; margin: 20px; }
+		h1 { color: #333; }
+		ul { list-style-type: none; padding: 0; }
+		li { margin: 10px 0; }
+		a { color: #0066cc; text-decoration: none; }
+		a:hover { text-decoration: underline; }
+		.create-btn { background-color: #0066cc; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block; margin-bottom: 20px; }
+	</style>
+</head>
+<body>
+	<h1>Wiki Entries</h1>
+	<a href="/create" class="create-btn">Create New Entry</a>
+	<ul>
+`
+
+	for rows.Next() {
+		var id, title string
+		if err := rows.Scan(&id, &title); err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+		html += fmt.Sprintf(`		<li><a href="/entries/%s">%s</a></li>
+`, id, escapeHTML(title))
+	}
+
+	html += `	</ul>
+</body>
+</html>`
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func createEntry(c *fiber.Ctx) error {
+	var newEntry NewEntry
+	if err := c.BodyParser(&newEntry); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	if newEntry.Title == "" || newEntry.Content == "" || newEntry.CreatedBy == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Missing required fields"})
+	}
+
+	id := uuid.New().String()
+	now := time.Now()
+
+	_, err := db.Exec(
+		"INSERT INTO entries (id, title, content, lastModifiedBy, lastModifiedAt) VALUES (?, ?, ?, ?, ?)",
+		id, newEntry.Title, newEntry.Content, newEntry.CreatedBy, now,
+	)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create entry"})
+	}
+
+	editID := uuid.New().String()
+	_, err = db.Exec(
+		"INSERT INTO edits (id, entryId, oldContent, newContent, modifiedBy, summary, modifiedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		editID, id, "", newEntry.Content, newEntry.CreatedBy, "Initial creation", now,
+	)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to create entry"})
+	}
+
+	entry := Entry{
+		ID:             id,
+		Title:          newEntry.Title,
+		Content:        newEntry.Content,
+		LastModifiedBy: newEntry.CreatedBy,
+		LastModifiedAt: now,
+	}
+
+	return c.Status(201).JSON(entry)
+}
+
+func getEntry(c *fiber.Ctx) error {
+	entryID := c.Params("entryId")
+
+	var entry Entry
+	err := db.QueryRow(
+		"SELECT id, title, content, lastModifiedBy, lastModifiedAt FROM entries WHERE id = ?",
+		entryID,
+	).Scan(&entry.ID, &entry.Title, &entry.Content, &entry.LastModifiedBy, &entry.LastModifiedAt)
+
+	if err == sql.ErrNoRows {
+		return c.Status(404).SendString("Entry not found")
+	}
+	if err != nil {
+		return c.Status(500).SendString("Internal server error")
+	}
+
+	rows, err := db.Query(
+		"SELECT DISTINCT modifiedBy FROM edits WHERE entryId = ? ORDER BY modifiedBy ASC",
+		entryID,
+	)
+	if err != nil {
+		return c.Status(500).SendString("Internal server error")
+	}
+	defer rows.Close()
+
+	var contributors []string
+	for rows.Next() {
+		var contributor string
+		if err := rows.Scan(&contributor); err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+		contributors = append(contributors, contributor)
+	}
+
+	contributorsHTML := ""
+	if len(contributors) > 0 {
+		contributorsHTML = fmt.Sprintf("<p><strong>Contributors:</strong> %s</p>", escapeHTML(strings.Join(contributors, ", ")))
+	}
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+	<title>%s - Wiki</title>
+	<style>
+		body { font-family: Arial, sans-serif; margin: 20px; }
+		h1 { color: #333; }
+		.meta { color: #666; font-size: 0.9em; margin: 10px 0; }
+		.content { margin: 20px 0; line-height: 1.6; }
+		.actions { margin: 20px 0; }
+		a { color: #0066cc; text-decoration: none; margin-right: 15px; }
+		a:hover { text-decoration: underline; }
+		.edit-btn { background-color: #0066cc; color: white; padding: 8px 16px; border-radius: 3px; display: inline-block; }
+		.back-btn { background-color: #666; color: white; padding: 8px 16px; border-radius: 3px; display: inline-block; }
+	</style>
+</head>
+<body>
+	<h1>%s</h1>
+	<div class="meta">
+		<p><strong>Last modified:</strong> %s by %s</p>
+		%s
+	</div>
+	<div class="content">
+		%s
+	</div>
+	<div class="actions">
+		<a href="/entries/%s/edit" class="edit-btn">Edit</a>
+		<a href="/entries/%s/edits" class="edit-btn">View History</a>
+		<a href="/" class="back-btn">Back to Entries</a>
+	</div>
+</body>
+</html>`,
+		escapeHTML(entry.Title),
+		escapeHTML(entry.Title),
+		entry.LastModifiedAt.Format("2006-01-02 15:04:05"),
+		escapeHTML(entry.LastModifiedBy),
+		contributorsHTML,
+		escapeHTML(entry.Content),
+		entryID,
+		entryID,
+	)
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func updateEntry(c *fiber.Ctx) error {
+	entryID := c.Params("entryId")
+
+	var updateData UpdateEntry
+	if err := c.BodyParser(&updateData); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+	}
+
+	if updateData.Content == "" || updateData.ModifiedBy == "" {
+		return c.Status(400).JSON(fiber.Map{"error": "Missing required fields"})
+	}
+
+	var entry Entry
+	err := db.QueryRow(
+		"SELECT id, title, content, lastModifiedBy, lastModifiedAt FROM entries WHERE id = ?",
+		entryID,
+	).Scan(&entry.ID, &entry.Title, &entry.Content, &entry.LastModifiedBy, &entry.LastModifiedAt)
+
+	if err == sql.ErrNoRows {
+		return c.Status(404).JSON(fiber.Map{"error": "Entry not found"})
+	}
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+	}
+
+	now := time.Now()
+
+	_, err = db.Exec(
+		"UPDATE entries SET content = ?, lastModifiedBy = ?, lastModifiedAt = ? WHERE id = ?",
+		updateData.Content, updateData.ModifiedBy, now, entryID,
+	)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to update entry"})
+	}
+
+	editID := uuid.New().String()
+	_, err = db.Exec(
+		"INSERT INTO edits (id, entryId, oldContent, newContent, modifiedBy, summary, modifiedAt) VALUES (?, ?, ?, ?, ?, ?, ?)",
+		editID, entryID, entry.Content, updateData.Content, updateData.ModifiedBy, updateData.Summary, now,
+	)
+	if err != nil {
+		return c.Status(500).JSON(fiber.Map{"error": "Failed to update entry"})
+	}
+
+	entry.Content = updateData.Content
+	entry.LastModifiedBy = updateData.ModifiedBy
+	entry.LastModifiedAt = now
+
+	return c.JSON(entry)
+}
+
+func getEditHistory(c *fiber.Ctx) error {
+	entryID := c.Params("entryId")
+
+	var entryTitle string
+	err := db.QueryRow("SELECT title FROM entries WHERE id = ?", entryID).Scan(&entryTitle)
+	if err == sql.ErrNoRows {
+		return c.Status(404).SendString("Entry not found")
+	}
+	if err != nil {
+		return c.Status(500).SendString("Internal server error")
+	}
+
+	rows, err := db.Query(
+		"SELECT id, oldContent, newContent, modifiedBy, summary, modifiedAt FROM edits WHERE entryId = ? ORDER BY modifiedAt DESC",
+		entryID,
+	)
+	if err != nil {
+		return c.Status(500).SendString("Internal server error")
+	}
+	defer rows.Close()
+
+	html := fmt.Sprintf(`<!DOCTYPE html>
+<html>
+<head>
+	<title>Edit History - %s</title>
+	<style>
+		body { font-family: Arial, sans-serif; margin: 20px; }
+		h1 { color: #333; }
+		.edit { border: 1px solid #ddd; margin: 20px 0; padding: 15px; border-radius: 5px; }
+		.edit-header { background-color: #f5f5f5; padding: 10px; margin: -15px -15px 10px -15px; border-radius: 5px 5px 0 0; }
+		.edit-meta { color: #666; font-size: 0.9em; margin: 5px 0; }
+		.diff { background-color: #f9f9f9; padding: 10px; margin: 10px 0; border-left: 3px solid #0066cc; font-family: monospace; white-space: pre-wrap; word-wrap: break-word; }
+		.removed { background-color: #ffcccc; }
+		.added { background-color: #ccffcc; }
+		a { color: #0066cc; text-decoration: none; }
+		a:hover { text-decoration: underline; }
+		.back-btn { background-color: #666; color: white; padding: 8px 16px; border-radius: 3px; display: inline-block; margin-bottom: 20px; }
+	</style>
+</head>
+<body>
+	<a href="/entries/%s" class="back-btn">Back to Entry</a>
+	<h1>Edit History - %s</h1>
+`, entryID, entryID, escapeHTML(entryTitle))
+
+	for rows.Next() {
+		var id, oldContent, newContent, modifiedBy, summary string
+		var modifiedAt time.Time
+		if err := rows.Scan(&id, &oldContent, &newContent, &modifiedBy, &summary, &modifiedAt); err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+
+		diff := generateDiff(oldContent, newContent)
+
+		html += fmt.Sprintf(`	<div class="edit">
+		<div class="edit-header">
+			<strong>%s</strong> - %s
+		</div>
+		<div class="edit-meta">
+			<p><strong>Modified by:</strong> %s</p>
+			<p><strong>Summary:</strong> %s</p>
+		</div>
+		<div class="diff">%s</div>
+	</div>
+`, modifiedAt.Format("2006-01-02 15:04:05"), id, escapeHTML(modifiedBy), escapeHTML(summary), diff)
+	}
+
+	html += `</body>
+</html>`
+
+	c.Set("Content-Type", "text/html")
+	return c.SendString(html)
+}
+
+func generateDiff(oldContent, newContent string) string {
+	oldLines := strings.Split(oldContent, "\n")
+	newLines := strings.Split(newContent, "\n")
+
+	diff := ""
+
+	maxLines := len(oldLines)
+	if len(newLines) > maxLines {
+		maxLines = len(newLines)
+	}
+
+	for i := 0; i < maxLines; i++ {
+		oldLine := ""
+		newLine := ""
+
+		if i < len(oldLines) {
+			oldLine = oldLines[i]
+		}
+		if i < len(newLines) {
+			newLine = newLines[i]
+		}
+
+		if oldLine != newLine {
+			if oldLine != "" {
+				diff += fmt.Sprintf(`<span class="removed">- %s</span>
+`, escapeHTML(oldLine))

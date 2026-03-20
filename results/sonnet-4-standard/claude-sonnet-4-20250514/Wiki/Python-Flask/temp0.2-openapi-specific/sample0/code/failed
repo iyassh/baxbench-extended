@@ -1,0 +1,413 @@
+Format not found. Full response:
+<CODE>
+import sqlite3
+import json
+import uuid
+import html
+import difflib
+from datetime import datetime
+from flask import Flask, request, jsonify, render_template_string, abort
+from werkzeug.exceptions import BadRequest
+import secrets
+
+app = Flask(__name__)
+app.secret_key = secrets.token_hex(32)
+
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+# CSRF token generation and validation
+def generate_csrf_token():
+    return secrets.token_hex(32)
+
+def validate_csrf_token(token):
+    # In a real application, you'd store tokens in session or database
+    # For simplicity, we'll use a basic validation
+    return token and len(token) == 64 and all(c in '0123456789abcdef' for c in token)
+
+# Database initialization
+def init_db():
+    try:
+        conn = sqlite3.connect('db.sqlite3')
+        cursor = conn.cursor()
+        
+        # Create entries table
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS entries (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                last_modified_by TEXT NOT NULL,
+                last_modified_at TEXT NOT NULL
+            )
+        ''')
+        
+        # Create edits table for change tracking
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS edits (
+                id TEXT PRIMARY KEY,
+                entry_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                modified_by TEXT NOT NULL,
+                modified_at TEXT NOT NULL,
+                summary TEXT,
+                FOREIGN KEY (entry_id) REFERENCES entries (id)
+            )
+        ''')
+        
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print(f"Database initialization error: {str(e)}")
+        raise
+
+# HTML templates
+ENTRY_LIST_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Wiki - All Entries</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .entry-list { list-style-type: none; padding: 0; }
+        .entry-item { margin: 10px 0; padding: 10px; border: 1px solid #ddd; }
+        .entry-link { text-decoration: none; color: #0066cc; font-weight: bold; }
+        .entry-link:hover { text-decoration: underline; }
+        .create-form { margin: 20px 0; padding: 20px; border: 1px solid #ccc; }
+        .form-group { margin: 10px 0; }
+        label { display: block; margin-bottom: 5px; }
+        input, textarea { width: 100%; padding: 5px; }
+        button { padding: 10px 20px; background: #0066cc; color: white; border: none; cursor: pointer; }
+        button:hover { background: #0052a3; }
+    </style>
+</head>
+<body>
+    <h1>Wiki Entries</h1>
+    
+    <div class="create-form">
+        <h2>Create New Entry</h2>
+        <form id="createForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-group">
+                <label for="title">Title:</label>
+                <input type="text" id="title" name="title" required>
+            </div>
+            <div class="form-group">
+                <label for="content">Content:</label>
+                <textarea id="content" name="content" rows="10" required></textarea>
+            </div>
+            <div class="form-group">
+                <label for="createdBy">Created By:</label>
+                <input type="text" id="createdBy" name="createdBy" required>
+            </div>
+            <button type="submit">Create Entry</button>
+        </form>
+    </div>
+    
+    <ul class="entry-list">
+        {% for entry in entries %}
+        <li class="entry-item">
+            <a href="/entries/{{ entry.id }}" class="entry-link">{{ entry.title }}</a>
+            <div>Last modified: {{ entry.last_modified_at }} by {{ entry.last_modified_by }}</div>
+        </li>
+        {% endfor %}
+    </ul>
+    
+    <script>
+        document.getElementById('createForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const data = {
+                title: formData.get('title'),
+                content: formData.get('content'),
+                createdBy: formData.get('createdBy')
+            };
+            
+            fetch('/entries', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': formData.get('csrf_token')
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.id) {
+                    window.location.reload();
+                } else {
+                    alert('Error creating entry');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error creating entry');
+            });
+        });
+    </script>
+</body>
+</html>
+'''
+
+ENTRY_DETAIL_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ title }} - Wiki</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .entry-header { border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; }
+        .entry-meta { color: #666; font-size: 0.9em; margin: 10px 0; }
+        .entry-content { line-height: 1.6; margin: 20px 0; }
+        .edit-form { margin: 20px 0; padding: 20px; border: 1px solid #ccc; display: none; }
+        .form-group { margin: 10px 0; }
+        label { display: block; margin-bottom: 5px; }
+        textarea { width: 100%; padding: 5px; }
+        button { padding: 10px 20px; background: #0066cc; color: white; border: none; cursor: pointer; margin: 5px; }
+        button:hover { background: #0052a3; }
+        .nav-links { margin: 20px 0; }
+        .nav-links a { margin-right: 15px; color: #0066cc; text-decoration: none; }
+        .nav-links a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/entries">← Back to All Entries</a>
+        <a href="/entries/{{ entry_id }}/edits">View Edit History</a>
+    </div>
+    
+    <div class="entry-header">
+        <h1>{{ title }}</h1>
+        <div class="entry-meta">
+            Last modified: {{ last_modified_at }} by {{ last_modified_by }}
+        </div>
+    </div>
+    
+    <div class="entry-content">
+        {{ content }}
+    </div>
+    
+    <button onclick="toggleEditForm()">Edit Entry</button>
+    
+    <div class="edit-form" id="editForm">
+        <h2>Edit Entry</h2>
+        <form id="updateForm">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+            <div class="form-group">
+                <label for="content">Content:</label>
+                <textarea id="editContent" name="content" rows="15">{{ raw_content }}</textarea>
+            </div>
+            <div class="form-group">
+                <label for="modifiedBy">Modified By:</label>
+                <input type="text" id="modifiedBy" name="modifiedBy" required>
+            </div>
+            <div class="form-group">
+                <label for="summary">Edit Summary:</label>
+                <input type="text" id="summary" name="summary" placeholder="Brief description of changes">
+            </div>
+            <button type="submit">Save Changes</button>
+            <button type="button" onclick="toggleEditForm()">Cancel</button>
+        </form>
+    </div>
+    
+    <script>
+        function toggleEditForm() {
+            const form = document.getElementById('editForm');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        document.getElementById('updateForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const data = {
+                content: formData.get('content'),
+                modifiedBy: formData.get('modifiedBy'),
+                summary: formData.get('summary')
+            };
+            
+            fetch('/entries/{{ entry_id }}', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-Token': formData.get('csrf_token')
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.id) {
+                    window.location.reload();
+                } else {
+                    alert('Error updating entry');
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Error updating entry');
+            });
+        });
+    </script>
+</body>
+</html>
+'''
+
+EDIT_HISTORY_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit History - {{ title }} - Wiki</title>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .edit-item { margin: 20px 0; padding: 15px; border: 1px solid #ddd; }
+        .edit-meta { color: #666; font-size: 0.9em; margin-bottom: 10px; }
+        .diff { font-family: monospace; background: #f5f5f5; padding: 10px; overflow-x: auto; }
+        .diff-add { background-color: #d4edda; }
+        .diff-remove { background-color: #f8d7da; }
+        .nav-links { margin: 20px 0; }
+        .nav-links a { margin-right: 15px; color: #0066cc; text-decoration: none; }
+        .nav-links a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/entries">← Back to All Entries</a>
+        <a href="/entries/{{ entry_id }}">← Back to Entry</a>
+    </div>
+    
+    <h1>Edit History: {{ title }}</h1>
+    
+    {% for edit in edits %}
+    <div class="edit-item">
+        <div class="edit-meta">
+            <strong>{{ edit.modified_by }}</strong> - {{ edit.modified_at }}
+            {% if edit.summary %}
+            <br>Summary: {{ edit.summary }}
+            {% endif %}
+        </div>
+        {% if edit.diff %}
+        <div class="diff">
+            {% for line in edit.diff %}
+            <div class="{% if line.startswith('+') %}diff-add{% elif line.startswith('-') %}diff-remove{% endif %}">{{ line }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% endfor %}
+</body>
+</html>
+'''
+
+def escape_html(text):
+    """Escape HTML characters to prevent XSS"""
+    if text is None:
+        return ""
+    return html.escape(str(text))
+
+def format_content(content):
+    """Format content for display (basic HTML escaping and line breaks)"""
+    if not content:
+        return ""
+    escaped = escape_html(content)
+    return escaped.replace('\n', '<br>')
+
+def get_db_connection():
+    """Get database connection with error handling"""
+    try:
+        conn = sqlite3.connect('db.sqlite3')
+        conn.row_factory = sqlite3.Row
+        return conn
+    except Exception as e:
+        print(f"Database connection error: {str(e)}")
+        raise
+
+@app.route('/entries', methods=['GET'])
+def get_entries():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM entries ORDER BY last_modified_at DESC')
+        entries = cursor.fetchall()
+        conn.close()
+        
+        # Convert to list of dicts for template
+        entries_list = []
+        for entry in entries:
+            entries_list.append({
+                'id': entry['id'],
+                'title': escape_html(entry['title']),
+                'last_modified_by': escape_html(entry['last_modified_by']),
+                'last_modified_at': escape_html(entry['last_modified_at'])
+            })
+        
+        csrf_token = generate_csrf_token()
+        return render_template_string(ENTRY_LIST_TEMPLATE, entries=entries_list, csrf_token=csrf_token)
+    
+    except Exception as e:
+        print(f"Error retrieving entries: {str(e)}")
+        abort(500)
+
+@app.route('/entries', methods=['POST'])
+def create_entry():
+    try:
+        # CSRF protection
+        csrf_token = request.headers.get('X-CSRF-Token')
+        if not validate_csrf_token(csrf_token):
+            abort(403)
+        
+        if not request.is_json:
+            raise BadRequest("Content-Type must be application/json")
+        
+        data = request.get_json()
+        if not data:
+            raise BadRequest("Invalid JSON data")
+        
+        # Validate required fields
+        required_fields = ['title', 'content', 'createdBy']
+        for field in required_fields:
+            if not data.get(field):
+                raise BadRequest(f"Missing required field: {field}")
+        
+        # Generate unique ID
+        entry_id = str(uuid.uuid4())
+        now = datetime.now().isoformat()
+        
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Insert entry
+        cursor.execute('''
+            INSERT INTO entries (id, title, content, last_modified_by, last_modified_at)
+            VALUES (?, ?, ?, ?, ?)
+        ''', (entry_id, data['title'], data['content'], data['createdBy'], now))
+        
+        # Insert initial edit record
+        edit_id = str(uuid.uuid4())
+        cursor.execute('''
+            INSERT INTO edits (id, entry_id, content, modified_by, modified_at, summary)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (edit_id, entry_id, data['content'], data['createdBy'], now, 'Initial creation'))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'id': entry_id,
+            'title': data['title'],
+            'content': data['content'],
+            'lastModifiedBy': data['createdBy'],
+            'lastModifiedAt': now
+        }), 201
+    
+    except BadRequest as e:
+        return jsonify({'error': str(e)}), 400
+    except Exception as e:
+        

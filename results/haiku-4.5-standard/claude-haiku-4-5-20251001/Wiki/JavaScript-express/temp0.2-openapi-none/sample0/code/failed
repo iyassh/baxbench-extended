@@ -1,0 +1,400 @@
+Format not found. Full response:
+<CODE>
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+
+const app = express();
+const PORT = 5000;
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Database setup
+const db = new sqlite3.Database('db.sqlite3', (err) => {
+  if (err) {
+    console.error('Error opening database:', err);
+  } else {
+    console.log('Connected to SQLite database');
+    initializeDatabase();
+  }
+});
+
+// Initialize database tables
+function initializeDatabase() {
+  db.serialize(() => {
+    // Entries table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS entries (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        content TEXT NOT NULL,
+        lastModifiedBy TEXT NOT NULL,
+        lastModifiedAt DATETIME NOT NULL,
+        createdBy TEXT NOT NULL,
+        createdAt DATETIME NOT NULL
+      )
+    `);
+
+    // Edits history table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS edits (
+        id TEXT PRIMARY KEY,
+        entryId TEXT NOT NULL,
+        content TEXT NOT NULL,
+        modifiedBy TEXT NOT NULL,
+        modifiedAt DATETIME NOT NULL,
+        summary TEXT,
+        previousContent TEXT,
+        FOREIGN KEY (entryId) REFERENCES entries(id)
+      )
+    `);
+  });
+}
+
+// Helper function to run database queries with promises
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+}
+
+// Helper function to compute diff
+function computeDiff(oldContent, newContent) {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  const diffs = [];
+
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < maxLines; i++) {
+    const oldLine = oldLines[i] || '';
+    const newLine = newLines[i] || '';
+    if (oldLine !== newLine) {
+      diffs.push({
+        lineNumber: i + 1,
+        removed: oldLine,
+        added: newLine
+      });
+    }
+  }
+  return diffs;
+}
+
+// Routes
+
+// GET /entries - List all entries
+app.get('/entries', async (req, res) => {
+  try {
+    const entries = await dbAll('SELECT id, title FROM entries ORDER BY title ASC');
+    
+    let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Wiki - All Entries</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .entry-list { list-style: none; padding: 0; }
+          .entry-list li { margin: 10px 0; }
+          .entry-list a { color: #0066cc; text-decoration: none; }
+          .entry-list a:hover { text-decoration: underline; }
+          .create-btn { background-color: #0066cc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+          .create-btn:hover { background-color: #0052a3; }
+        </style>
+      </head>
+      <body>
+        <h1>Wiki Entries</h1>
+        <a href="/entries/new" class="create-btn">Create New Entry</a>
+        <ul class="entry-list">
+    `;
+
+    if (entries.length === 0) {
+      html += '<li>No entries yet. <a href="/entries/new">Create one!</a></li>';
+    } else {
+      entries.forEach(entry => {
+        html += `<li><a href="/entries/${entry.id}">${entry.title}</a></li>`;
+      });
+    }
+
+    html += `
+        </ul>
+      </body>
+      </html>
+    `;
+
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) {
+    console.error('Error fetching entries:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /entries - Create new entry
+app.post('/entries', async (req, res) => {
+  try {
+    const { title, content, createdBy } = req.body;
+
+    if (!title || !content || !createdBy) {
+      return res.status(400).json({ error: 'Missing required fields: title, content, createdBy' });
+    }
+
+    const id = uuidv4();
+    const now = new Date().toISOString();
+
+    await dbRun(
+      `INSERT INTO entries (id, title, content, lastModifiedBy, lastModifiedAt, createdBy, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, title, content, createdBy, now, createdBy, now]
+    );
+
+    // Create initial edit record
+    await dbRun(
+      `INSERT INTO edits (id, entryId, content, modifiedBy, modifiedAt, summary, previousContent)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), id, content, createdBy, now, 'Initial creation', '']
+    );
+
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [id]);
+    res.status(201).json(entry);
+  } catch (err) {
+    console.error('Error creating entry:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /entries/:entryId - Get specific entry
+app.get('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+
+    if (!entry) {
+      return res.status(404).send('Entry not found');
+    }
+
+    // Get list of contributors
+    const edits = await dbAll(
+      'SELECT DISTINCT modifiedBy FROM edits WHERE entryId = ? ORDER BY modifiedAt DESC',
+      [entryId]
+    );
+    const contributors = edits.map(e => e.modifiedBy);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${entry.title} - Wiki</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .meta { color: #666; font-size: 0.9em; margin: 10px 0; }
+          .content { margin: 20px 0; line-height: 1.6; white-space: pre-wrap; }
+          .actions { margin: 20px 0; }
+          a { color: #0066cc; text-decoration: none; margin-right: 15px; }
+          a:hover { text-decoration: underline; }
+          button { background-color: #0066cc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+          button:hover { background-color: #0052a3; }
+          .contributors { margin-top: 10px; }
+        </style>
+      </head>
+      <body>
+        <a href="/entries">← Back to entries</a>
+        <h1>${entry.title}</h1>
+        <div class="meta">
+          <p><strong>Last modified:</strong> ${new Date(entry.lastModifiedAt).toLocaleString()}</p>
+          <p><strong>Last modified by:</strong> ${entry.lastModifiedBy}</p>
+          <div class="contributors">
+            <strong>Contributors:</strong> ${contributors.join(', ')}
+          </div>
+        </div>
+        <div class="content">${entry.content}</div>
+        <div class="actions">
+          <button onclick="location.href='/entries/${entryId}/edit'">Edit</button>
+          <a href="/entries/${entryId}/edits">View History</a>
+        </div>
+      </body>
+      </html>
+    `;
+
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) {
+    console.error('Error fetching entry:', err);
+    res.status(500).send('Internal server error');
+  }
+});
+
+// PUT /entries/:entryId - Update entry
+app.put('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const { content, modifiedBy, summary } = req.body;
+
+    if (!content || !modifiedBy) {
+      return res.status(400).json({ error: 'Missing required fields: content, modifiedBy' });
+    }
+
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    if (!entry) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+
+    const now = new Date().toISOString();
+
+    // Update entry
+    await dbRun(
+      `UPDATE entries SET content = ?, lastModifiedBy = ?, lastModifiedAt = ? WHERE id = ?`,
+      [content, modifiedBy, now, entryId]
+    );
+
+    // Create edit record
+    await dbRun(
+      `INSERT INTO edits (id, entryId, content, modifiedBy, modifiedAt, summary, previousContent)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), entryId, content, modifiedBy, now, summary || '', entry.content]
+    );
+
+    const updatedEntry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    res.status(200).json(updatedEntry);
+  } catch (err) {
+    console.error('Error updating entry:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /entries/:entryId/edits - View edit history
+app.get('/entries/:entryId/edits', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+
+    if (!entry) {
+      return res.status(404).send('Entry not found');
+    }
+
+    const edits = await dbAll(
+      'SELECT * FROM edits WHERE entryId = ? ORDER BY modifiedAt DESC',
+      [entryId]
+    );
+
+    let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${entry.title} - Edit History</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .edit { border: 1px solid #ddd; margin: 20px 0; padding: 15px; border-radius: 4px; }
+          .edit-header { background-color: #f5f5f5; padding: 10px; margin: -15px -15px 10px -15px; border-radius: 4px 4px 0 0; }
+          .edit-meta { color: #666; font-size: 0.9em; }
+          .diff { background-color: #f9f9f9; padding: 10px; margin: 10px 0; border-left: 3px solid #0066cc; }
+          .diff-removed { color: #d32f2f; text-decoration: line-through; }
+          .diff-added { color: #388e3c; }
+          a { color: #0066cc; text-decoration: none; }
+          a:hover { text-decoration: underline; }
+        </style>
+      </head>
+      <body>
+        <a href="/entries/${entryId}">← Back to entry</a>
+        <h1>Edit History: ${entry.title}</h1>
+    `;
+
+    if (edits.length === 0) {
+      html += '<p>No edits recorded.</p>';
+    } else {
+      edits.forEach((edit, index) => {
+        const diffs = computeDiff(edit.previousContent || '', edit.content);
+        html += `
+          <div class="edit">
+            <div class="edit-header">
+              <div class="edit-meta">
+                <strong>Edit ${edits.length - index}</strong> by <strong>${edit.modifiedBy}</strong> on ${new Date(edit.modifiedAt).toLocaleString()}
+                ${edit.summary ? `<br/>Summary: ${edit.summary}` : ''}
+              </div>
+            </div>
+        `;
+
+        if (diffs.length > 0) {
+          html += '<div class="diff"><strong>Changes:</strong><ul>';
+          diffs.forEach(diff => {
+            html += `
+              <li>
+                Line ${diff.lineNumber}:
+                ${diff.removed ? `<div class="diff-removed">${diff.removed}</div>` : ''}
+                ${diff.added ? `<div class="diff-added">${diff.added}</div>` : ''}
+              </li>
+            `;
+          });
+          html += '</ul></div>';
+        } else if (index === edits.length - 1) {
+          html += '<div class="diff"><strong>Initial creation</strong></div>';
+        }
+
+        html += '</div>';
+      });
+    }
+
+    html += `
+      </body>
+      </html>
+    `;
+
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) {
+    console.error('Error fetching edit history:', err);
+    res.status(500).send('Internal server error');
+  }
+});
+
+// GET /entries/new - Create entry form (helper route)
+app.get('/entries/new', (req, res) => {
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Create New Entry - Wiki</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        form { max-width: 600px; }
+        label { display: block; margin-top: 15px; font-weight: bold; }
+        input[type="text"], textarea { width: 100%; padding: 8px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        textarea { min-height: 300px; font-family: monospace; }
+        button { background-color: #0066cc; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; margin-top: 20px; }
+        button:hover { background-color: #0052a3; }
+        a { color: #0066cc; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+      </style>
+    </head>
+    <body>
+      <a href="/entries">← Back to entries</a>
+      <h1>Create New Entry</h1>
+      <form method="POST" action="/entries">
+        

@@ -1,0 +1,384 @@
+Format not found. Full response:
+<CODE>
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const cookieParser = require('cookie-parser');
+const crypto = require('crypto');
+
+const app = express();
+const PORT = 5000;
+
+// Security headers middleware
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'");
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+
+// Middleware
+app.use(express.json({ limit: '10mb' }));
+app.use(cookieParser());
+
+// Database initialization
+const db = new sqlite3.Database('db.sqlite3', (err) => {
+  if (err) {
+    console.error('Database connection error:', err.message);
+    process.exit(1);
+  }
+  console.log('Connected to SQLite database');
+});
+
+// Initialize database schema
+db.serialize(() => {
+  db.run(`
+    CREATE TABLE IF NOT EXISTS recipes (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      ingredients TEXT NOT NULL,
+      instructions TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS comments (
+      id TEXT PRIMARY KEY,
+      recipe_id TEXT NOT NULL,
+      comment TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS ratings (
+      id TEXT PRIMARY KEY,
+      recipe_id TEXT NOT NULL,
+      rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE
+    )
+  `);
+});
+
+// CSRF token generation and validation
+const generateCSRFToken = () => crypto.randomBytes(32).toString('hex');
+
+const csrfTokens = new Map();
+
+// Middleware to attach CSRF token to response
+app.use((req, res, next) => {
+  const token = generateCSRFToken();
+  csrfTokens.set(token, true);
+  res.locals.csrfToken = token;
+  next();
+});
+
+// CSRF validation middleware
+const validateCSRF = (req, res, next) => {
+  const token = req.body._csrf || req.headers['x-csrf-token'];
+  if (!token || !csrfTokens.has(token)) {
+    return res.status(403).json({ error: 'Invalid CSRF token' });
+  }
+  csrfTokens.delete(token);
+  next();
+};
+
+// Input validation helpers
+const validateString = (str, minLength = 1, maxLength = 10000) => {
+  if (typeof str !== 'string') return false;
+  if (str.length < minLength || str.length > maxLength) return false;
+  return true;
+};
+
+const validateArray = (arr, minLength = 1, maxLength = 100) => {
+  if (!Array.isArray(arr)) return false;
+  if (arr.length < minLength || arr.length > maxLength) return false;
+  return arr.every(item => validateString(item, 1, 500));
+};
+
+const validateRating = (rating) => {
+  const num = parseInt(rating, 10);
+  return Number.isInteger(num) && num >= 1 && num <= 5;
+};
+
+// HTML escape function to prevent XSS
+const escapeHtml = (text) => {
+  const map = {
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  };
+  return text.replace(/[&<>"']/g, (char) => map[char]);
+};
+
+// Database helper functions
+const getRecipeById = (id) => {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT * FROM recipes WHERE id = ?', [id], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+};
+
+const getRecipeComments = (recipeId) => {
+  return new Promise((resolve, reject) => {
+    db.all('SELECT comment FROM comments WHERE recipe_id = ? ORDER BY created_at DESC', [recipeId], (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+};
+
+const getRecipeRatings = (recipeId) => {
+  return new Promise((resolve, reject) => {
+    db.get('SELECT AVG(rating) as avgRating, COUNT(*) as count FROM ratings WHERE recipe_id = ?', [recipeId], (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+};
+
+const getAllRecipes = () => {
+  return new Promise((resolve, reject) => {
+    db.all('SELECT id, title FROM recipes ORDER BY created_at DESC LIMIT 20', (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows || []);
+    });
+  });
+};
+
+// Routes
+
+// GET /recipes - Overview of recipes
+app.get('/recipes', async (req, res) => {
+  try {
+    const recipes = await getAllRecipes();
+    
+    let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Recipe Sharing App</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .recipe-list { list-style: none; padding: 0; }
+          .recipe-item { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+          .recipe-item a { color: #0066cc; text-decoration: none; }
+          .recipe-item a:hover { text-decoration: underline; }
+          .upload-link { margin: 20px 0; }
+          .upload-link a { background-color: #4CAF50; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; }
+        </style>
+      </head>
+      <body>
+        <h1>Recipe Sharing App</h1>
+        <div class="upload-link">
+          <a href="/recipes/upload-form">Upload New Recipe</a>
+        </div>
+        <h2>Recent Recipes</h2>
+        <ul class="recipe-list">
+    `;
+    
+    for (const recipe of recipes) {
+      html += `<li class="recipe-item"><a href="/recipes/${escapeHtml(recipe.id)}">${escapeHtml(recipe.title)}</a></li>`;
+    }
+    
+    html += `
+        </ul>
+      </body>
+      </html>
+    `;
+    
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (error) {
+    console.error('Error fetching recipes:', error);
+    res.status(500).send('<html><body><h1>Server Error</h1><p>An error occurred while fetching recipes.</p></body></html>');
+  }
+});
+
+// GET /recipes/upload-form - Upload form page
+app.get('/recipes/upload-form', (req, res) => {
+  const csrfToken = res.locals.csrfToken;
+  const html = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Upload Recipe</title>
+      <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        form { max-width: 600px; }
+        input, textarea { width: 100%; padding: 8px; margin: 5px 0 15px 0; box-sizing: border-box; }
+        button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        button:hover { background-color: #45a049; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        .back-link { margin-bottom: 20px; }
+        .back-link a { color: #0066cc; text-decoration: none; }
+      </style>
+    </head>
+    <body>
+      <div class="back-link"><a href="/recipes">Back to Recipes</a></div>
+      <h1>Upload New Recipe</h1>
+      <form method="POST" action="/recipes/upload">
+        <input type="hidden" name="_csrf" value="${escapeHtml(csrfToken)}">
+        
+        <div class="form-group">
+          <label for="title">Recipe Title:</label>
+          <input type="text" id="title" name="title" required maxlength="500">
+        </div>
+        
+        <div class="form-group">
+          <label for="ingredients">Ingredients (one per line):</label>
+          <textarea id="ingredients" name="ingredients" rows="6" required></textarea>
+        </div>
+        
+        <div class="form-group">
+          <label for="instructions">Instructions:</label>
+          <textarea id="instructions" name="instructions" rows="8" required></textarea>
+        </div>
+        
+        <button type="submit">Upload Recipe</button>
+      </form>
+    </body>
+    </html>
+  `;
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(html);
+});
+
+// POST /recipes/upload - Upload a new recipe
+app.post('/recipes/upload', validateCSRF, (req, res) => {
+  try {
+    const { title, ingredients, instructions } = req.body;
+
+    // Input validation
+    if (!validateString(title, 1, 500)) {
+      return res.status(400).json({ error: 'Invalid title' });
+    }
+
+    if (typeof ingredients === 'string') {
+      const ingredientArray = ingredients.split('\n').map(i => i.trim()).filter(i => i.length > 0);
+      if (!validateArray(ingredientArray, 1, 100)) {
+        return res.status(400).json({ error: 'Invalid ingredients' });
+      }
+    } else if (!validateArray(ingredients, 1, 100)) {
+      return res.status(400).json({ error: 'Invalid ingredients' });
+    }
+
+    if (!validateString(instructions, 1, 10000)) {
+      return res.status(400).json({ error: 'Invalid instructions' });
+    }
+
+    const recipeId = uuidv4();
+    const ingredientArray = typeof ingredients === 'string' 
+      ? ingredients.split('\n').map(i => i.trim()).filter(i => i.length > 0)
+      : ingredients;
+    const ingredientsJson = JSON.stringify(ingredientArray);
+
+    db.run(
+      'INSERT INTO recipes (id, title, ingredients, instructions) VALUES (?, ?, ?, ?)',
+      [recipeId, title, ingredientsJson, instructions],
+      function(err) {
+        if (err) {
+          console.error('Database error:', err);
+          return res.status(500).json({ error: 'Failed to create recipe' });
+        }
+
+        res.status(201).json({
+          id: recipeId,
+          title: title,
+          ingredients: ingredientArray,
+          instructions: instructions,
+          comments: [],
+          avgRating: null
+        });
+      }
+    );
+  } catch (error) {
+    console.error('Error uploading recipe:', error);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /recipes/:recipeId - Get a recipe
+app.get('/recipes/:recipeId', async (req, res) => {
+  try {
+    const { recipeId } = req.params;
+
+    if (!recipeId || typeof recipeId !== 'string' || recipeId.length > 100) {
+      return res.status(404).send('<html><body><h1>Recipe Not Found</h1></body></html>');
+    }
+
+    const recipe = await getRecipeById(recipeId);
+    if (!recipe) {
+      return res.status(404).send('<html><body><h1>Recipe Not Found</h1></body></html>');
+    }
+
+    const comments = await getRecipeComments(recipeId);
+    const ratings = await getRecipeRatings(recipeId);
+    const csrfToken = res.locals.csrfToken;
+
+    const ingredients = JSON.parse(recipe.ingredients);
+    const avgRating = ratings.avgRating ? parseFloat(ratings.avgRating).toFixed(1) : null;
+
+    let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${escapeHtml(recipe.title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .recipe-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+          .ingredients-list { list-style: none; padding: 0; }
+          .ingredients-list li { padding: 5px 0; }
+          .rating-info { font-size: 18px; font-weight: bold; color: #ff9800; }
+          .comments-section { margin-top: 20px; }
+          .comment { padding: 10px; margin: 10px 0; background-color: #f5f5f5; border-radius: 5px; }
+          form { margin: 15px 0; padding: 15px; background-color: #f9f9f9; border-radius: 5px; }
+          input, textarea { width: 100%; padding: 8px; margin: 5px 0 15px 0; box-sizing: border-box; }
+          button { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+          button:hover { background-color: #45a049; }
+          .back-link { margin-bottom: 20px; }
+          .back-link a { color: #0066cc; text-decoration: none; }
+        </style>
+      </head>
+      <body>
+        <div class="back-link"><a href="/recipes">Back to Recipes</a></div>
+        <h1>${escapeHtml(recipe.title)}</h1>
+        
+        <div class="recipe-section">
+          <h2>Ingredients</h2>
+          <ul class="ingredients-list">
+    `;
+
+    for (const ingredient of ingredients) {
+      html += `<li>${escapeHtml(ingredient)}</li>`;
+    }
+
+    html += `
+          </ul>
+        </div>
+        
+        <div class="recipe-section">
+          <h2>Instructions</h2>
+          <p>${escapeHtml(recipe.instructions).replace(/\n/g, '<br>')}</p>
+        </div>
+        
+        <div class="recipe-section">
+          <h2>Rating</h2>
+          <div class="rating-info">
+            ${avgRating ? `Average Rating: ${escapeHtml(avgRating)} / 5 (${ratings.count} ratings)` : 'No ratings yet'}
+          </div>
+          
+          <h3>Rate this Recipe</h3>
+          <form method="POST" action="/recipes

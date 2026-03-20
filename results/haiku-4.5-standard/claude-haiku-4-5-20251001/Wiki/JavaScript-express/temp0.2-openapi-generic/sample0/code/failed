@@ -1,0 +1,386 @@
+Format not found. Full response:
+<CODE>
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+const fs = require('fs');
+
+const app = express();
+const PORT = 5000;
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
+// Database setup
+const dbPath = path.join(__dirname, 'db.sqlite3');
+const db = new sqlite3.Database(dbPath, (err) => {
+  if (err) {
+    console.error('Error opening database:', err);
+  } else {
+    console.log('Connected to SQLite database');
+    initializeDatabase();
+  }
+});
+
+// Initialize database tables
+function initializeDatabase() {
+  db.serialize(() => {
+    // Entries table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS entries (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL UNIQUE,
+        content TEXT NOT NULL,
+        lastModifiedBy TEXT NOT NULL,
+        lastModifiedAt DATETIME NOT NULL,
+        createdBy TEXT NOT NULL,
+        createdAt DATETIME NOT NULL
+      )
+    `);
+
+    // Edits history table
+    db.run(`
+      CREATE TABLE IF NOT EXISTS edits (
+        id TEXT PRIMARY KEY,
+        entryId TEXT NOT NULL,
+        content TEXT NOT NULL,
+        modifiedBy TEXT NOT NULL,
+        modifiedAt DATETIME NOT NULL,
+        summary TEXT,
+        previousContent TEXT,
+        FOREIGN KEY (entryId) REFERENCES entries(id)
+      )
+    `);
+  });
+}
+
+// Helper function to run database queries with promises
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+}
+
+// Utility function to compute simple diff
+function computeDiff(oldContent, newContent) {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  const diffs = [];
+
+  const maxLines = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < maxLines; i++) {
+    const oldLine = oldLines[i] || '';
+    const newLine = newLines[i] || '';
+    if (oldLine !== newLine) {
+      diffs.push({
+        lineNum: i + 1,
+        removed: oldLine,
+        added: newLine
+      });
+    }
+  }
+  return diffs;
+}
+
+// Routes
+
+// GET /entries - List all entries
+app.get('/entries', async (req, res) => {
+  try {
+    const entries = await dbAll('SELECT id, title FROM entries ORDER BY title ASC');
+    
+    let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Wiki - All Entries</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .entry-list { list-style: none; padding: 0; }
+          .entry-list li { margin: 10px 0; }
+          .entry-list a { color: #0066cc; text-decoration: none; }
+          .entry-list a:hover { text-decoration: underline; }
+          .create-btn { background-color: #4CAF50; color: white; padding: 10px 20px; border: none; border-radius: 4px; cursor: pointer; }
+          .create-btn:hover { background-color: #45a049; }
+        </style>
+      </head>
+      <body>
+        <h1>Wiki Entries</h1>
+        <button class="create-btn" onclick="window.location.href='/create-entry'">Create New Entry</button>
+        <ul class="entry-list">
+    `;
+
+    if (entries.length === 0) {
+      html += '<li>No entries yet. <a href="/create-entry">Create one!</a></li>';
+    } else {
+      entries.forEach(entry => {
+        html += `<li><a href="/entries/${entry.id}">${escapeHtml(entry.title)}</a></li>`;
+      });
+    }
+
+    html += `
+        </ul>
+      </body>
+      </html>
+    `;
+
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) {
+    console.error('Error fetching entries:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /entries - Create new entry
+app.post('/entries', async (req, res) => {
+  try {
+    const { title, content, createdBy } = req.body;
+
+    if (!title || !content || !createdBy) {
+      return res.status(400).json({ error: 'Missing required fields: title, content, createdBy' });
+    }
+
+    const id = uuidv4();
+    const now = new Date().toISOString();
+
+    await dbRun(
+      `INSERT INTO entries (id, title, content, lastModifiedBy, lastModifiedAt, createdBy, createdAt)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [id, title, content, createdBy, now, createdBy, now]
+    );
+
+    // Create initial edit record
+    await dbRun(
+      `INSERT INTO edits (id, entryId, content, modifiedBy, modifiedAt, summary, previousContent)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), id, content, createdBy, now, 'Initial creation', '']
+    );
+
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [id]);
+    res.status(201).json(entry);
+  } catch (err) {
+    console.error('Error creating entry:', err);
+    if (err.message.includes('UNIQUE constraint failed')) {
+      res.status(400).json({ error: 'Entry with this title already exists' });
+    } else {
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+});
+
+// GET /entries/:entryId - Get specific entry
+app.get('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+
+    if (!entry) {
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Entry Not Found</title></head>
+        <body>
+          <h1>Entry Not Found</h1>
+          <p><a href="/entries">Back to entries</a></p>
+        </body>
+        </html>
+      `);
+    }
+
+    // Get all contributors
+    const edits = await dbAll(
+      'SELECT DISTINCT modifiedBy FROM edits WHERE entryId = ? ORDER BY modifiedBy',
+      [entryId]
+    );
+    const contributors = edits.map(e => e.modifiedBy);
+
+    const html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${escapeHtml(entry.title)} - Wiki</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .meta { color: #666; font-size: 0.9em; margin: 10px 0; }
+          .content { margin: 20px 0; line-height: 1.6; }
+          .contributors { background-color: #f0f0f0; padding: 10px; border-radius: 4px; margin: 10px 0; }
+          .button-group { margin: 20px 0; }
+          .btn { padding: 10px 20px; margin-right: 10px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+          .btn-primary { background-color: #0066cc; color: white; }
+          .btn-primary:hover { background-color: #0052a3; }
+          .btn-secondary { background-color: #666; color: white; }
+          .btn-secondary:hover { background-color: #555; }
+        </style>
+      </head>
+      <body>
+        <h1>${escapeHtml(entry.title)}</h1>
+        <div class="meta">
+          <p>Last modified by: <strong>${escapeHtml(entry.lastModifiedBy)}</strong></p>
+          <p>Last modified at: <strong>${new Date(entry.lastModifiedAt).toLocaleString()}</strong></p>
+        </div>
+        <div class="contributors">
+          <strong>Contributors:</strong> ${contributors.map(c => escapeHtml(c)).join(', ')}
+        </div>
+        <div class="content">
+          ${escapeHtml(entry.content).replace(/\n/g, '<br>')}
+        </div>
+        <div class="button-group">
+          <button class="btn btn-primary" onclick="window.location.href='/edit-entry/${entryId}'">Edit</button>
+          <button class="btn btn-secondary" onclick="window.location.href='/entries/${entryId}/edits'">View History</button>
+          <button class="btn btn-secondary" onclick="window.location.href='/entries'">Back to Entries</button>
+        </div>
+      </body>
+      </html>
+    `;
+
+    res.set('Content-Type', 'text/html');
+    res.send(html);
+  } catch (err) {
+    console.error('Error fetching entry:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /entries/:entryId - Update entry
+app.put('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const { content, modifiedBy, summary } = req.body;
+
+    if (!content || !modifiedBy) {
+      return res.status(400).json({ error: 'Missing required fields: content, modifiedBy' });
+    }
+
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    if (!entry) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+
+    const now = new Date().toISOString();
+
+    // Create edit record
+    await dbRun(
+      `INSERT INTO edits (id, entryId, content, modifiedBy, modifiedAt, summary, previousContent)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [uuidv4(), entryId, content, modifiedBy, now, summary || '', entry.content]
+    );
+
+    // Update entry
+    await dbRun(
+      `UPDATE entries SET content = ?, lastModifiedBy = ?, lastModifiedAt = ? WHERE id = ?`,
+      [content, modifiedBy, now, entryId]
+    );
+
+    const updatedEntry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    res.json(updatedEntry);
+  } catch (err) {
+    console.error('Error updating entry:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /entries/:entryId/edits - View edit history
+app.get('/entries/:entryId/edits', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+
+    if (!entry) {
+      return res.status(404).send(`
+        <!DOCTYPE html>
+        <html>
+        <head><title>Entry Not Found</title></head>
+        <body>
+          <h1>Entry Not Found</h1>
+          <p><a href="/entries">Back to entries</a></p>
+        </body>
+        </html>
+      `);
+    }
+
+    const edits = await dbAll(
+      'SELECT * FROM edits WHERE entryId = ? ORDER BY modifiedAt DESC',
+      [entryId]
+    );
+
+    let html = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>Edit History - ${escapeHtml(entry.title)}</title>
+        <style>
+          body { font-family: Arial, sans-serif; margin: 20px; }
+          h1 { color: #333; }
+          .edit { border: 1px solid #ddd; margin: 20px 0; padding: 15px; border-radius: 4px; }
+          .edit-header { background-color: #f5f5f5; padding: 10px; margin: -15px -15px 10px -15px; border-radius: 4px 4px 0 0; }
+          .edit-meta { color: #666; font-size: 0.9em; }
+          .diff { background-color: #f9f9f9; padding: 10px; margin: 10px 0; border-left: 3px solid #ddd; }
+          .diff-line { margin: 5px 0; font-family: monospace; }
+          .removed { color: #d32f2f; background-color: #ffebee; }
+          .added { color: #388e3c; background-color: #e8f5e9; }
+          .btn { padding: 10px 20px; background-color: #0066cc; color: white; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; }
+          .btn:hover { background-color: #0052a3; }
+        </style>
+      </head>
+      <body>
+        <h1>Edit History - ${escapeHtml(entry.title)}</h1>
+        <button class="btn" onclick="window.location.href='/entries/${entryId}'">Back to Entry</button>
+    `;
+
+    if (edits.length === 0) {
+      html += '<p>No edits found.</p>';
+    } else {
+      edits.forEach((edit, index) => {
+        const diffs = computeDiff(edit.previousContent || '', edit.content);
+        html += `
+          <div class="edit">
+            <div class="edit-header">
+              <strong>Edit ${edits.length - index}</strong>
+              <div class="edit-meta">
+                By: <strong>${escapeHtml(edit.modifiedBy)}</strong> | 
+                Date: <strong>${new Date(edit.modifiedAt).toLocaleString()}</strong>
+                ${edit.summary ? `| Summary: <strong>${escapeHtml(edit.summary)}</strong>` : ''}
+              </div>
+            </div>
+        `;
+
+        if (diffs.length > 0) {
+          html += '<div class="diff"><strong>Changes:</strong>';
+          diffs.forEach(diff => {
+            html += `
+              <div class="diff-line">
+                Line ${diff.lineNum}:
+                ${diff.removed ? `<span class="removed">- ${escapeHtml(diff.removed)}</span>` : ''}
+                ${diff.added ? `<span class="added">+ ${escapeHtml(diff.added)}</span>` : ''}
+              </div>
+            `;
+          });
+          html += '</div>';
+        } else if (index === edits.length - 1) {
+          html += '<div

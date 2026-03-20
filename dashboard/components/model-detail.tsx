@@ -1,0 +1,288 @@
+"use client";
+
+import type { ConfigWithStats, RadarDataPoint, ResultWithCwes } from "@/lib/types";
+import { RadarChart } from "@/components/charts/radar-chart";
+import { cn } from "@/lib/utils";
+
+interface ModelDetailProps {
+  config: ConfigWithStats;
+  radarData: RadarDataPoint[];
+  results: ResultWithCwes[];
+  onClose: () => void;
+}
+
+function getFamily(name: string): string {
+  if (name.includes("opus")) return "Opus";
+  if (name.includes("sonnet")) return "Sonnet";
+  if (name.includes("haiku")) return "Haiku";
+  return "Unknown";
+}
+
+const familyDotColor: Record<string, string> = {
+  Haiku: "bg-zinc-400",
+  Sonnet: "bg-blue-400",
+  Opus: "bg-purple-400",
+  Unknown: "bg-zinc-500",
+};
+
+interface MiniStatProps {
+  label: string;
+  value: string;
+  accent: string;
+}
+
+function MiniStat({ label, value, accent }: MiniStatProps) {
+  return (
+    <div className="bg-zinc-900 border border-zinc-800 rounded-lg p-3">
+      <p className="text-[10px] text-zinc-500 uppercase tracking-wider">
+        {label}
+      </p>
+      <p className={cn("text-lg font-bold tabular-nums mt-1", accent)}>
+        {value}
+      </p>
+    </div>
+  );
+}
+
+export function ModelDetail({
+  config,
+  radarData,
+  results,
+  onClose: _onClose,
+}: ModelDetailProps) {
+  const family = getFamily(config.name);
+  const secPass = Math.round(config.sec_pass_at_1 * 1000) / 10;
+  const passAt1 = Math.round(config.pass_at_1 * 1000) / 10;
+
+  // Top CWEs
+  const cweCount: Record<number, { num: number; desc: string; count: number }> =
+    {};
+  for (const r of results) {
+    for (const cwe of r.cwes) {
+      if (!cweCount[cwe.cwe_num]) {
+        cweCount[cwe.cwe_num] = {
+          num: cwe.cwe_num,
+          desc: cwe.cwe_desc,
+          count: 0,
+        };
+      }
+      cweCount[cwe.cwe_num].count++;
+    }
+  }
+  const topCwes = Object.values(cweCount)
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+  const maxCweCount = topCwes.length > 0 ? topCwes[0].count : 1;
+
+  // Scenario summary
+  const scenarioMap = new Map<
+    string,
+    { total: number; functional: number; secure: number; cwes: number }
+  >();
+  for (const r of results) {
+    if (!scenarioMap.has(r.scenario)) {
+      scenarioMap.set(r.scenario, {
+        total: 0,
+        functional: 0,
+        secure: 0,
+        cwes: 0,
+      });
+    }
+    const entry = scenarioMap.get(r.scenario)!;
+    entry.total++;
+    if (r.functional_pass) entry.functional++;
+    if (r.functional_pass && r.cwes.length === 0) entry.secure++;
+    entry.cwes += r.cwes.length;
+  }
+  const scenarios = Array.from(scenarioMap.entries())
+    .map(([name, stats]) => ({ name, ...stats }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return (
+    <div className="space-y-8">
+      {/* Header */}
+      <div>
+        <div className="flex items-center gap-3 flex-wrap">
+          <h2 className="text-2xl font-bold text-zinc-100">{config.name}</h2>
+          <div className="flex items-center gap-1.5">
+            <span
+              className={`inline-block w-2 h-2 rounded-full ${familyDotColor[family]}`}
+            />
+            <span className="text-xs text-zinc-400">{family}</span>
+          </div>
+          <span
+            className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-medium ${
+              config.thinking
+                ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                : "bg-zinc-800 text-zinc-400 border border-zinc-700"
+            }`}
+          >
+            {config.thinking ? "thinking" : "standard"}
+          </span>
+        </div>
+        <p className="text-sm text-zinc-500 mt-1">
+          Model ID: {config.model_id}
+        </p>
+      </div>
+
+      {/* Stats row */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <MiniStat
+          label="pass@1"
+          value={`${passAt1.toFixed(1)}%`}
+          accent="text-blue-400"
+        />
+        <MiniStat
+          label="sec_pass@1"
+          value={`${secPass.toFixed(1)}%`}
+          accent={
+            secPass >= 80
+              ? "text-emerald-400"
+              : secPass >= 50
+                ? "text-amber-400"
+                : "text-red-400"
+          }
+        />
+        <MiniStat
+          label="Total CWEs"
+          value={String(config.total_cwes)}
+          accent="text-red-400"
+        />
+        <MiniStat
+          label="Total Results"
+          value={String(config.total_results)}
+          accent="text-zinc-200"
+        />
+      </div>
+
+      {/* Radar chart */}
+      {radarData.length > 0 && (
+        <div>
+          <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">
+            Performance Radar
+          </p>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4">
+            <RadarChart data={radarData} />
+          </div>
+        </div>
+      )}
+
+      {/* Top Vulnerabilities */}
+      {topCwes.length > 0 && (
+        <div>
+          <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">
+            Top Vulnerabilities
+          </p>
+          <div className="space-y-2">
+            {topCwes.map((cwe) => (
+              <div
+                key={cwe.num}
+                className="flex items-center gap-3 bg-zinc-900 border border-zinc-800 rounded-lg px-3 py-2"
+              >
+                <span className="text-xs font-medium text-red-400 bg-red-500/10 border border-red-500/20 rounded-full px-2 py-0.5 shrink-0">
+                  CWE-{cwe.num}
+                </span>
+                <span className="text-xs text-zinc-400 truncate flex-1">
+                  {cwe.desc}
+                </span>
+                <div className="flex items-center gap-2 shrink-0">
+                  <div className="w-20 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-red-400 rounded-full"
+                      style={{
+                        width: `${(cwe.count / maxCweCount) * 100}%`,
+                      }}
+                    />
+                  </div>
+                  <span className="text-xs text-zinc-300 tabular-nums w-6 text-right">
+                    {cwe.count}
+                  </span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Results by Scenario */}
+      {scenarios.length > 0 && (
+        <div>
+          <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">
+            Results by Scenario
+          </p>
+          <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-zinc-800">
+                  <th className="text-left text-xs text-zinc-500 font-medium px-3 py-2">
+                    Scenario
+                  </th>
+                  <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
+                    Tests
+                  </th>
+                  <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
+                    Func Pass
+                  </th>
+                  <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
+                    Sec Pass
+                  </th>
+                  <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
+                    CWEs
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {scenarios.map((s) => (
+                  <tr
+                    key={s.name}
+                    className="border-b border-zinc-800/50 last:border-0"
+                  >
+                    <td className="px-3 py-2 text-zinc-300 truncate max-w-[160px]">
+                      {s.name}
+                    </td>
+                    <td className="px-3 py-2 text-right text-zinc-400 tabular-nums">
+                      {s.total}
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <span
+                        className={
+                          s.functional / s.total >= 0.8
+                            ? "text-emerald-400"
+                            : s.functional / s.total >= 0.5
+                              ? "text-amber-400"
+                              : "text-red-400"
+                        }
+                      >
+                        {s.functional}/{s.total}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      <span
+                        className={
+                          s.secure / s.total >= 0.8
+                            ? "text-emerald-400"
+                            : s.secure / s.total >= 0.5
+                              ? "text-amber-400"
+                              : "text-red-400"
+                        }
+                      >
+                        {s.secure}/{s.total}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right tabular-nums">
+                      {s.cwes > 0 ? (
+                        <span className="text-red-400">{s.cwes}</span>
+                      ) : (
+                        <span className="text-zinc-600">0</span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

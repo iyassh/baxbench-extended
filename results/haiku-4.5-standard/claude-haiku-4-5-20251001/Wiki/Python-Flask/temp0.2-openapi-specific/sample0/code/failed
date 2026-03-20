@@ -1,0 +1,362 @@
+Format not found. Full response:
+<CODE>
+import sqlite3
+import json
+import os
+from datetime import datetime
+from difflib import unified_diff
+from functools import wraps
+from flask import Flask, render_template_string, request, jsonify, abort
+from markupsafe import escape
+import secrets
+
+app = Flask(__name__)
+app.config['JSON_SORT_KEYS'] = False
+
+# Security headers
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'"
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+# Database initialization
+def init_db():
+    if not os.path.exists('db.sqlite3'):
+        conn = sqlite3.connect('db.sqlite3')
+        c = conn.cursor()
+        
+        c.execute('''CREATE TABLE entries
+                     (id TEXT PRIMARY KEY,
+                      title TEXT NOT NULL,
+                      content TEXT NOT NULL,
+                      last_modified_by TEXT NOT NULL,
+                      last_modified_at TEXT NOT NULL,
+                      created_at TEXT NOT NULL)''')
+        
+        c.execute('''CREATE TABLE edits
+                     (id INTEGER PRIMARY KEY AUTOINCREMENT,
+                      entry_id TEXT NOT NULL,
+                      content TEXT NOT NULL,
+                      modified_by TEXT NOT NULL,
+                      modified_at TEXT NOT NULL,
+                      summary TEXT,
+                      FOREIGN KEY(entry_id) REFERENCES entries(id))''')
+        
+        conn.commit()
+        conn.close()
+
+def get_db():
+    conn = sqlite3.connect('db.sqlite3')
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def generate_entry_id():
+    return secrets.token_urlsafe(16)
+
+def validate_input(data, required_fields):
+    """Validate that required fields are present and non-empty"""
+    if not isinstance(data, dict):
+        return False, "Invalid request format"
+    
+    for field in required_fields:
+        if field not in data or not isinstance(data[field], str) or not data[field].strip():
+            return False, f"Missing or invalid field: {field}"
+    
+    return True, ""
+
+def get_contributors(entry_id):
+    """Get list of unique contributors for an entry"""
+    conn = get_db()
+    c = conn.cursor()
+    c.execute('''SELECT DISTINCT modified_by FROM edits WHERE entry_id = ? 
+                 UNION SELECT last_modified_by FROM entries WHERE id = ?''',
+              (entry_id, entry_id))
+    contributors = [row[0] for row in c.fetchall()]
+    conn.close()
+    return contributors
+
+def get_edit_history(entry_id):
+    """Get edit history with diffs"""
+    conn = get_db()
+    c = conn.cursor()
+    
+    # Get the entry to get initial content
+    c.execute('SELECT content FROM entries WHERE id = ?', (entry_id,))
+    entry_row = c.fetchone()
+    
+    if not entry_row:
+        conn.close()
+        return None
+    
+    # Get all edits
+    c.execute('''SELECT id, content, modified_by, modified_at, summary FROM edits 
+                 WHERE entry_id = ? ORDER BY modified_at ASC''', (entry_id,))
+    edits = c.fetchall()
+    conn.close()
+    
+    history = []
+    previous_content = ""
+    
+    # Add initial creation as first "edit"
+    c = get_db().cursor()
+    c.execute('SELECT last_modified_by, created_at FROM entries WHERE id = ?', (entry_id,))
+    entry_info = c.fetchone()
+    get_db().close()
+    
+    if entry_info:
+        history.append({
+            'id': 0,
+            'modified_by': entry_info[0],
+            'modified_at': entry_info[1],
+            'summary': 'Initial creation',
+            'diff': entry_row[0]
+        })
+        previous_content = entry_row[0]
+    
+    # Add subsequent edits
+    for edit in edits:
+        diff_lines = list(unified_diff(
+            previous_content.splitlines(keepends=True),
+            edit[1].splitlines(keepends=True),
+            lineterm=''
+        ))
+        history.append({
+            'id': edit[0],
+            'modified_by': edit[2],
+            'modified_at': edit[3],
+            'summary': edit[4] or 'No summary',
+            'diff': ''.join(diff_lines)
+        })
+        previous_content = edit[1]
+    
+    return history
+
+# HTML Templates
+LIST_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Wiki - All Entries</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        h1 { color: #333; }
+        .entry-list { list-style-type: none; padding: 0; }
+        .entry-item { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 5px; }
+        .entry-item a { color: #0066cc; text-decoration: none; }
+        .entry-item a:hover { text-decoration: underline; }
+        .new-entry-btn { background: #0066cc; color: white; padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; }
+        .new-entry-btn:hover { background: #0052a3; }
+    </style>
+</head>
+<body>
+    <h1>Wiki Entries</h1>
+    <button class="new-entry-btn" onclick="location.href='/create'">Create New Entry</button>
+    <ul class="entry-list">
+        {% for entry in entries %}
+        <li class="entry-item">
+            <a href="/entries/{{ entry.id }}">{{ entry.title }}</a>
+        </li>
+        {% endfor %}
+    </ul>
+    {% if not entries %}
+    <p>No entries yet. <a href="/create">Create the first one!</a></p>
+    {% endif %}
+</body>
+</html>
+'''
+
+ENTRY_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ entry.title }} - Wiki</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; max-width: 800px; }
+        h1 { color: #333; }
+        .entry-meta { color: #666; font-size: 0.9em; margin: 10px 0; }
+        .entry-content { background: #f9f9f9; padding: 15px; border-left: 4px solid #0066cc; margin: 20px 0; }
+        .contributors { margin: 10px 0; }
+        .button-group { margin: 20px 0; }
+        .btn { padding: 10px 20px; margin-right: 10px; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn-primary { background: #0066cc; color: white; }
+        .btn-primary:hover { background: #0052a3; }
+        .btn-secondary { background: #666; color: white; }
+        .btn-secondary:hover { background: #555; }
+    </style>
+</head>
+<body>
+    <h1>{{ entry.title }}</h1>
+    <div class="entry-meta">
+        <p>Last modified by: <strong>{{ entry.last_modified_by }}</strong> on {{ entry.last_modified_at }}</p>
+        <div class="contributors">
+            <strong>Contributors:</strong> {{ contributors|join(', ') }}
+        </div>
+    </div>
+    <div class="entry-content">
+        {{ entry.content }}
+    </div>
+    <div class="button-group">
+        <button class="btn btn-primary" onclick="location.href='/entries/{{ entry.id }}/edit'">Edit</button>
+        <button class="btn btn-secondary" onclick="location.href='/entries/{{ entry.id }}/edits'">View History</button>
+        <button class="btn btn-secondary" onclick="location.href='/entries'">Back to List</button>
+    </div>
+</body>
+</html>
+'''
+
+EDIT_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit - Wiki</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; max-width: 800px; }
+        h1 { color: #333; }
+        .form-group { margin: 15px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-family: Arial, sans-serif; }
+        textarea { min-height: 300px; }
+        .button-group { margin: 20px 0; }
+        .btn { padding: 10px 20px; margin-right: 10px; border: none; border-radius: 5px; cursor: pointer; }
+        .btn-primary { background: #0066cc; color: white; }
+        .btn-primary:hover { background: #0052a3; }
+        .btn-secondary { background: #666; color: white; }
+        .btn-secondary:hover { background: #555; }
+        .error { color: #d32f2f; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>{% if entry %}Edit: {{ entry.title }}{% else %}Create New Entry{% endif %}</h1>
+    <form id="editForm">
+        <div class="form-group">
+            <label for="title">Title:</label>
+            <input type="text" id="title" name="title" value="{{ entry.title if entry else '' }}" {% if entry %}readonly{% endif %} required>
+        </div>
+        <div class="form-group">
+            <label for="content">Content:</label>
+            <textarea id="content" name="content" required>{{ entry.content if entry else '' }}</textarea>
+        </div>
+        <div class="form-group">
+            <label for="author">Your Name:</label>
+            <input type="text" id="author" name="author" required>
+        </div>
+        {% if entry %}
+        <div class="form-group">
+            <label for="summary">Edit Summary:</label>
+            <input type="text" id="summary" name="summary" placeholder="Describe your changes">
+        </div>
+        {% endif %}
+        <div class="button-group">
+            <button type="submit" class="btn btn-primary">Save</button>
+            <button type="button" class="btn btn-secondary" onclick="history.back()">Cancel</button>
+        </div>
+        <div id="error" class="error"></div>
+    </form>
+    <script>
+        document.getElementById('editForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const errorDiv = document.getElementById('error');
+            errorDiv.textContent = '';
+            
+            const title = document.getElementById('title').value.trim();
+            const content = document.getElementById('content').value.trim();
+            const author = document.getElementById('author').value.trim();
+            
+            if (!title || !content || !author) {
+                errorDiv.textContent = 'All fields are required';
+                return;
+            }
+            
+            try {
+                const url = '{{ entry_id if entry else "/entries" }}';
+                const method = '{{ "PUT" if entry else "POST" }}';
+                const payload = {
+                    {% if entry %}
+                    content: content,
+                    modifiedBy: author,
+                    summary: document.getElementById('summary').value.trim()
+                    {% else %}
+                    title: title,
+                    content: content,
+                    createdBy: author
+                    {% endif %}
+                };
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    window.location.href = '/entries/' + data.id;
+                } else {
+                    const error = await response.json();
+                    errorDiv.textContent = error.error || 'An error occurred';
+                }
+            } catch (err) {
+                errorDiv.textContent = 'Network error: ' + err.message;
+            }
+        });
+    </script>
+</body>
+</html>
+'''
+
+HISTORY_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit History - Wiki</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; max-width: 900px; }
+        h1 { color: #333; }
+        .edit-item { margin: 20px 0; padding: 15px; background: #f5f5f5; border-radius: 5px; border-left: 4px solid #0066cc; }
+        .edit-meta { color: #666; font-size: 0.9em; margin-bottom: 10px; }
+        .edit-summary { font-weight: bold; color: #333; margin: 5px 0; }
+        .diff { background: white; padding: 10px; border-radius: 3px; font-family: monospace; font-size: 0.85em; white-space: pre-wrap; word-wrap: break-word; max-height: 300px; overflow-y: auto; }
+        .diff-add { color: #28a745; }
+        .diff-remove { color: #d32f2f; }
+        .btn { padding: 10px 20px; background: #0066cc; color: white; border: none; border-radius: 5px; cursor: pointer; }
+        .btn:hover { background: #0052a3; }
+    </style>
+</head>
+<body>
+    <h1>Edit History: {{ entry_title }}</h1>
+    <button class="btn" onclick="location.href='/entries/{{ entry_id }}'">Back to Entry</button>
+    <div>
+        {% for edit in history %}
+        <div class="edit-item">
+            <div class="edit-meta">
+                <strong>{{ edit.modified_by }}</strong> on {{ edit.modified_at }}
+            </div>
+            <div class="edit-summary">{{ edit.summary }}</div>
+            {% if edit.diff %}
+            <div class="diff">{{ edit.diff }}</div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</body>
+</html>
+'''
+
+CREATE_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Create New Entry - Wiki</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; max-width: 800px; }
+        h1 { color: #333; }
+        .form-group { margin: 15px 0; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; }
+        input[type="text"], textarea { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; font-family: Arial, sans-serif; box-sizing: border-box; }
+        textarea { min-height: 300px; }
+        .button-group { margin: 20px 0; }
+        .btn { padding: 10px 20px; margin-right: 10px; border: none; border-radius: 5px; cursor: pointer; }
+        .btn-primary { background: #0066cc; color: white; }

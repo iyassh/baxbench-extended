@@ -26,12 +26,18 @@ from pathlib import Path
 MODEL_CONFIGS = [
     {"name": "opus-4-standard", "model": "claude-opus-4-20250514", "thinking": False},
     {"name": "opus-4-thinking", "model": "claude-opus-4-20250514", "thinking": True},
+    {"name": "opus-4.1-standard", "model": "claude-opus-4-1-20250805", "thinking": False},
+    {"name": "opus-4.1-thinking", "model": "claude-opus-4-1-20250805", "thinking": True},
     {"name": "opus-4.5-standard", "model": "claude-opus-4-5-20251101", "thinking": False},
     {"name": "opus-4.5-thinking", "model": "claude-opus-4-5-20251101", "thinking": True},
+    {"name": "opus-4.6-standard", "model": "claude-opus-4-6", "thinking": False},
+    {"name": "opus-4.6-thinking", "model": "claude-opus-4-6", "thinking": True},
     {"name": "sonnet-4-standard", "model": "claude-sonnet-4-20250514", "thinking": False},
     {"name": "sonnet-4-thinking", "model": "claude-sonnet-4-20250514", "thinking": True},
     {"name": "sonnet-4.5-standard", "model": "claude-sonnet-4-5-20250929", "thinking": False},
     {"name": "sonnet-4.5-thinking", "model": "claude-sonnet-4-5-20250929", "thinking": True},
+    {"name": "sonnet-4.6-standard", "model": "claude-sonnet-4-6", "thinking": False},
+    {"name": "sonnet-4.6-thinking", "model": "claude-sonnet-4-6", "thinking": True},
     {"name": "haiku-4.5-standard", "model": "claude-haiku-4-5-20251001", "thinking": False},
     {"name": "haiku-4.5-thinking", "model": "claude-haiku-4-5-20251001", "thinking": True},
 ]

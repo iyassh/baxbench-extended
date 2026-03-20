@@ -72,3 +72,52 @@ export interface ScenarioSummary {
   secure_passes: number;
   unique_cwes: number;
 }
+
+export interface HeatmapCell {
+  model: string;
+  scenario: string;
+  cwe_count: number;
+  total_tests: number;
+}
+
+export interface InsightData {
+  text: string;
+  type: "security" | "comparison" | "vulnerability";
+  link?: string;
+}
+
+export interface RadarDataPoint {
+  axis: string;
+  value: number;
+}
+
+export interface DeltaRow {
+  config: string;
+  baseline: number;
+  comparison: number;
+  delta: number;
+  delta_pct: number;
+}
+
+export interface CweTreemapItem {
+  name: string;
+  cwe_num: number;
+  occurrences: number;
+  affected_models: number;
+}
+
+export interface FamilyDistribution {
+  family: string;
+  configs: string[];
+  values: number[];
+  median: number;
+  min: number;
+  max: number;
+}
+
+export interface SearchItem {
+  type: "model" | "cwe" | "scenario";
+  label: string;
+  href: string;
+  subtitle?: string;
+}
