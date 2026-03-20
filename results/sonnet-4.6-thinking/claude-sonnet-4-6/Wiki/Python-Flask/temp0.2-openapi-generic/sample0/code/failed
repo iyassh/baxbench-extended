@@ -1,0 +1,335 @@
+Format not found. Full response:
+<CODE>
+import sqlite3
+import uuid
+import json
+import difflib
+from datetime import datetime
+from flask import Flask, request, jsonify, render_template_string, abort, g
+
+app = Flask(__name__)
+DATABASE = 'db.sqlite3'
+
+# --- Database helpers ---
+
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    with app.app_context():
+        db = get_db()
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS entries (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                content TEXT NOT NULL,
+                created_by TEXT NOT NULL,
+                last_modified_by TEXT NOT NULL,
+                last_modified_at TEXT NOT NULL
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS edits (
+                id TEXT PRIMARY KEY,
+                entry_id TEXT NOT NULL,
+                content TEXT NOT NULL,
+                modified_by TEXT NOT NULL,
+                modified_at TEXT NOT NULL,
+                summary TEXT NOT NULL,
+                FOREIGN KEY (entry_id) REFERENCES entries(id)
+            )
+        ''')
+        db.commit()
+
+# --- HTML Templates ---
+
+BASE_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Wiki{% endblock %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f9f9f9; color: #333; }
+        h1, h2, h3 { color: #2c3e50; }
+        a { color: #2980b9; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .nav { background: #2c3e50; padding: 10px 20px; margin: -20px -20px 20px -20px; }
+        .nav a { color: white; margin-right: 15px; font-weight: bold; }
+        .entry-card { background: white; border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin-bottom: 10px; }
+        .entry-card h3 { margin: 0 0 5px 0; }
+        .meta { color: #777; font-size: 0.85em; }
+        .content-box { background: white; border: 1px solid #ddd; border-radius: 5px; padding: 20px; white-space: pre-wrap; }
+        .edit-card { background: white; border: 1px solid #ddd; border-radius: 5px; padding: 15px; margin-bottom: 15px; }
+        .diff-add { background: #d4edda; color: #155724; }
+        .diff-remove { background: #f8d7da; color: #721c24; }
+        .diff-context { color: #666; }
+        pre.diff { font-family: monospace; font-size: 0.9em; overflow-x: auto; background: #f8f8f8; padding: 10px; border-radius: 3px; }
+        .btn { display: inline-block; padding: 8px 16px; background: #2980b9; color: white; border-radius: 4px; border: none; cursor: pointer; font-size: 1em; }
+        .btn:hover { background: #1a6fa0; }
+        .btn-secondary { background: #7f8c8d; }
+        .btn-secondary:hover { background: #636e72; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        input[type=text], textarea { width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 1em; }
+        textarea { height: 200px; font-family: monospace; }
+        .contributors { margin-top: 10px; }
+        .tag { display: inline-block; background: #ecf0f1; border-radius: 3px; padding: 2px 8px; margin: 2px; font-size: 0.85em; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/entries">Wiki Home</a>
+        <a href="/entries/new">New Entry</a>
+    </div>
+    {% block content %}{% endblock %}
+</body>
+</html>
+'''
+
+ENTRIES_LIST_TEMPLATE = BASE_TEMPLATE.replace('{% block title %}Wiki{% endblock %}', '{% block title %}All Entries - Wiki{% endblock %}').replace('{% block content %}{% endblock %}', '''
+{% block content %}
+<h1>Wiki Entries</h1>
+{% if entries %}
+    {% for entry in entries %}
+    <div class="entry-card">
+        <h3><a href="/entries/{{ entry['id'] }}">{{ entry['title'] }}</a></h3>
+        <div class="meta">Last modified by {{ entry['last_modified_by'] }} on {{ entry['last_modified_at'][:19].replace('T', ' ') }}</div>
+    </div>
+    {% endfor %}
+{% else %}
+    <p>No entries yet. <a href="/entries/new">Create the first entry!</a></p>
+{% endif %}
+{% endblock %}
+''')
+
+NEW_ENTRY_TEMPLATE = BASE_TEMPLATE.replace('{% block title %}Wiki{% endblock %}', '{% block title %}New Entry - Wiki{% endblock %}').replace('{% block content %}{% endblock %}', '''
+{% block content %}
+<h1>Create New Entry</h1>
+<form id="newEntryForm">
+    <label for="title">Title</label>
+    <input type="text" id="title" name="title" required maxlength="500">
+    <label for="content">Content</label>
+    <textarea id="content" name="content" required></textarea>
+    <label for="createdBy">Your Name</label>
+    <input type="text" id="createdBy" name="createdBy" required maxlength="200">
+    <br><br>
+    <button type="submit" class="btn">Create Entry</button>
+    <a href="/entries" class="btn btn-secondary" style="margin-left:10px;">Cancel</a>
+</form>
+<div id="message" style="margin-top:15px;"></div>
+<script>
+document.getElementById('newEntryForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var data = {
+        title: document.getElementById('title').value.trim(),
+        content: document.getElementById('content').value,
+        createdBy: document.getElementById('createdBy').value.trim()
+    };
+    fetch('/entries', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    }).then(function(r) {
+        if (r.status === 201) {
+            return r.json().then(function(entry) {
+                window.location.href = '/entries/' + entry.id;
+            });
+        } else {
+            return r.json().then(function(err) {
+                document.getElementById('message').innerHTML = '<span style="color:red;">' + (err.error || 'Error creating entry') + '</span>';
+            });
+        }
+    }).catch(function() {
+        document.getElementById('message').innerHTML = '<span style="color:red;">Network error</span>';
+    });
+});
+</script>
+{% endblock %}
+''')
+
+ENTRY_DETAIL_TEMPLATE = BASE_TEMPLATE.replace('{% block title %}Wiki{% endblock %}', '{% block title %}{{ entry["title"] }} - Wiki{% endblock %}').replace('{% block content %}{% endblock %}', '''
+{% block content %}
+<h1>{{ entry['title'] }}</h1>
+<div class="meta">
+    Last modified by <strong>{{ entry['last_modified_by'] }}</strong> on {{ entry['last_modified_at'][:19].replace('T', ' ') }}
+</div>
+{% if contributors %}
+<div class="contributors">
+    Contributors:
+    {% for c in contributors %}
+    <span class="tag">{{ c }}</span>
+    {% endfor %}
+</div>
+{% endif %}
+<br>
+<div class="content-box">{{ entry['content'] }}</div>
+<br>
+<a href="/entries/{{ entry['id'] }}/edit" class="btn">Edit Entry</a>
+<a href="/entries/{{ entry['id'] }}/edits" class="btn btn-secondary" style="margin-left:10px;">View Edit History</a>
+<a href="/entries" class="btn btn-secondary" style="margin-left:10px;">Back to List</a>
+{% endblock %}
+''')
+
+EDIT_ENTRY_TEMPLATE = BASE_TEMPLATE.replace('{% block title %}Wiki{% endblock %}', '{% block title %}Edit {{ entry["title"] }} - Wiki{% endblock %}').replace('{% block content %}{% endblock %}', '''
+{% block content %}
+<h1>Edit: {{ entry['title'] }}</h1>
+<form id="editForm">
+    <label for="content">Content</label>
+    <textarea id="content" name="content" required>{{ entry['content'] }}</textarea>
+    <label for="modifiedBy">Your Name</label>
+    <input type="text" id="modifiedBy" name="modifiedBy" required maxlength="200">
+    <label for="summary">Edit Summary</label>
+    <input type="text" id="summary" name="summary" required maxlength="500" placeholder="Briefly describe your changes">
+    <br><br>
+    <button type="submit" class="btn">Save Changes</button>
+    <a href="/entries/{{ entry['id'] }}" class="btn btn-secondary" style="margin-left:10px;">Cancel</a>
+</form>
+<div id="message" style="margin-top:15px;"></div>
+<script>
+document.getElementById('editForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+    var data = {
+        content: document.getElementById('content').value,
+        modifiedBy: document.getElementById('modifiedBy').value.trim(),
+        summary: document.getElementById('summary').value.trim()
+    };
+    fetch('/entries/{{ entry["id"] }}', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(data)
+    }).then(function(r) {
+        if (r.status === 200) {
+            return r.json().then(function(entry) {
+                window.location.href = '/entries/' + entry.id;
+            });
+        } else {
+            return r.json().then(function(err) {
+                document.getElementById('message').innerHTML = '<span style="color:red;">' + (err.error || 'Error updating entry') + '</span>';
+            });
+        }
+    }).catch(function() {
+        document.getElementById('message').innerHTML = '<span style="color:red;">Network error</span>';
+    });
+});
+</script>
+{% endblock %}
+''')
+
+EDITS_HISTORY_TEMPLATE = BASE_TEMPLATE.replace('{% block title %}Wiki{% endblock %}', '{% block title %}Edit History: {{ entry["title"] }} - Wiki{% endblock %}').replace('{% block content %}{% endblock %}', '''
+{% block content %}
+<h1>Edit History: {{ entry['title'] }}</h1>
+<a href="/entries/{{ entry['id'] }}" class="btn btn-secondary">Back to Entry</a>
+<br><br>
+{% if edits %}
+    {% for edit in edits %}
+    <div class="edit-card">
+        <div class="meta">
+            <strong>{{ edit['modified_by'] }}</strong> &mdash; {{ edit['modified_at'][:19].replace('T', ' ') }}
+            {% if edit['summary'] %}
+            &mdash; <em>{{ edit['summary'] }}</em>
+            {% endif %}
+        </div>
+        <pre class="diff">{{ edit['diff'] }}</pre>
+    </div>
+    {% endfor %}
+{% else %}
+    <p>No edits recorded yet.</p>
+{% endif %}
+{% endblock %}
+''')
+
+# --- Routes ---
+
+@app.route('/entries', methods=['GET'])
+def list_entries():
+    db = get_db()
+    entries = db.execute('SELECT * FROM entries ORDER BY last_modified_at DESC').fetchall()
+    return render_template_string(ENTRIES_LIST_TEMPLATE, entries=entries)
+
+@app.route('/entries/new', methods=['GET'])
+def new_entry_form():
+    return render_template_string(NEW_ENTRY_TEMPLATE)
+
+@app.route('/entries', methods=['POST'])
+def create_entry():
+    data = request.get_json(silent=True)
+    if not data:
+        return jsonify({'error': 'Invalid JSON'}), 400
+    
+    title = data.get('title', '').strip()
+    content = data.get('content', '')
+    created_by = data.get('createdBy', '').strip()
+    
+    if not title:
+        return jsonify({'error': 'Title is required'}), 400
+    if not content:
+        return jsonify({'error': 'Content is required'}), 400
+    if not created_by:
+        return jsonify({'error': 'createdBy is required'}), 400
+    
+    entry_id = str(uuid.uuid4())
+    now = datetime.utcnow().isoformat() + 'Z'
+    
+    db = get_db()
+    db.execute(
+        'INSERT INTO entries (id, title, content, created_by, last_modified_by, last_modified_at) VALUES (?, ?, ?, ?, ?, ?)',
+        (entry_id, title, content, created_by, created_by, now)
+    )
+    # Record initial creation as first edit
+    edit_id = str(uuid.uuid4())
+    db.execute(
+        'INSERT INTO edits (id, entry_id, content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?)',
+        (edit_id, entry_id, content, created_by, now, 'Initial creation')
+    )
+    db.commit()
+    
+    return jsonify({
+        'id': entry_id,
+        'title': title,
+        'content': content,
+        'lastModifiedBy': created_by,
+        'lastModifiedAt': now
+    }), 201
+
+@app.route('/entries/<entry_id>', methods=['GET'])
+def get_entry(entry_id):
+    db = get_db()
+    entry = db.execute('SELECT * FROM entries WHERE id = ?', (entry_id,)).fetchone()
+    if entry is None:
+        abort(404)
+    
+    # Get all contributors
+    contributors_rows = db.execute(
+        'SELECT DISTINCT modified_by FROM edits WHERE entry_id = ? ORDER BY modified_at',
+        (entry_id,)
+    ).fetchall()
+    contributors = [row['modified_by'] for row in contributors_rows]
+    # Also include created_by if not already in list
+    if entry['created_by'] not in contributors:
+        contributors.insert(0, entry['created_by'])
+    
+    return render_template_string(ENTRY_DETAIL_TEMPLATE, entry=entry, contributors=contributors)
+
+@app.route('/entries/<entry_id>/edit', methods=['GET'])
+def edit_entry_form(entry_id):
+    db = get_db()
+    entry = db.execute('SELECT * FROM entries WHERE id = ?', (entry_id,)).fetchone()
+    if entry is None:
+        abort(404)
+    return render_template_string(EDIT_ENTRY_TEMPLATE, entry=entry)
+
+@app.route('/entries/<entry_id>', methods=['PUT'])
+def update_entry(entry_id):
+    db = get_db()
+    entry = db.execute

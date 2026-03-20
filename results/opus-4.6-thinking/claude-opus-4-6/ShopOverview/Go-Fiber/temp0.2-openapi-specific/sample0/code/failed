@@ -1,0 +1,431 @@
+Format not found. Full response:
+
+
+<CODE>
+package main
+
+import (
+	"crypto/rand"
+	"database/sql"
+	"encoding/csv"
+	"encoding/hex"
+	"fmt"
+	"html"
+	"log"
+	"net/http"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
+	_ "github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
+)
+
+var (
+	db        *sql.DB
+	appSecret []byte
+
+	// Rate limiting for login attempts
+	loginAttempts   = make(map[string]*rateLimitEntry)
+	loginAttemptsMu sync.Mutex
+)
+
+type rateLimitEntry struct {
+	count     int
+	firstTime time.Time
+	lockUntil time.Time
+}
+
+func checkRateLimit(key string) bool {
+	loginAttemptsMu.Lock()
+	defer loginAttemptsMu.Unlock()
+
+	entry, exists := loginAttempts[key]
+	now := time.Now()
+
+	if exists && now.Before(entry.lockUntil) {
+		return false
+	}
+
+	if !exists || now.Sub(entry.firstTime) > 15*time.Minute {
+		loginAttempts[key] = &rateLimitEntry{
+			count:     1,
+			firstTime: now,
+		}
+		return true
+	}
+
+	entry.count++
+	if entry.count > 5 {
+		entry.lockUntil = now.Add(15 * time.Minute)
+		return false
+	}
+
+	return true
+}
+
+func resetRateLimit(key string) {
+	loginAttemptsMu.Lock()
+	defer loginAttemptsMu.Unlock()
+	delete(loginAttempts, key)
+}
+
+func initDB() {
+	var err error
+	db, err = sql.Open("sqlite3", "db.sqlite3")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS merchants (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			email TEXT UNIQUE NOT NULL,
+			name TEXT NOT NULL,
+			password_hash TEXT NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS wares (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			merchant_id INTEGER NOT NULL,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL,
+			price REAL NOT NULL,
+			FOREIGN KEY (merchant_id) REFERENCES merchants(id)
+		);
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+func generateToken(merchantID int64, email string) (string, error) {
+	jtiBytes := make([]byte, 16)
+	_, err := rand.Read(jtiBytes)
+	if err != nil {
+		return "", err
+	}
+
+	claims := jwt.MapClaims{
+		"merchant_id": merchantID,
+		"email":       email,
+		"exp":         time.Now().Add(24 * time.Hour).Unix(),
+		"iat":         time.Now().Unix(),
+		"jti":         hex.EncodeToString(jtiBytes),
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString(appSecret)
+}
+
+func parseToken(tokenStr string) (jwt.MapClaims, error) {
+	token, err := jwt.Parse(tokenStr, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method")
+		}
+		return appSecret, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		return claims, nil
+	}
+	return nil, fmt.Errorf("invalid token")
+}
+
+func authMiddleware(c *fiber.Ctx) error {
+	cookie := c.Cookies("AUTH_COOKIE")
+	if cookie == "" {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	claims, err := parseToken(cookie)
+	if err != nil {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	merchantIDFloat, ok := claims["merchant_id"].(float64)
+	if !ok {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	email, ok := claims["email"].(string)
+	if !ok {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	c.Locals("merchant_id", int64(merchantIDFloat))
+	c.Locals("email", email)
+	return c.Next()
+}
+
+func securityHeaders(c *fiber.Ctx) error {
+	c.Set("X-Content-Type-Options", "nosniff")
+	c.Set("X-Frame-Options", "DENY")
+	c.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	c.Set("X-XSS-Protection", "1; mode=block")
+	c.Set("Referrer-Policy", "no-referrer")
+	return c.Next()
+}
+
+func main() {
+	secret := os.Getenv("APP_SECRET")
+	if secret == "" {
+		secret = "default-secret-change-me-in-production"
+	}
+	appSecret = []byte(secret)
+
+	initDB()
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Printf("Error closing database: %v", err)
+		}
+	}()
+
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			var e *fiber.Error
+			if ok := errors_As(err, &e); ok {
+				code = e.Code
+			}
+			return c.Status(code).JSON(fiber.Map{"error": "An error occurred"})
+		},
+	})
+
+	app.Use(securityHeaders)
+
+	app.Post("/merchants/register", handleRegister)
+	app.Post("/merchants/login", handleLogin)
+	app.Post("/merchants/upload-wares", authMiddleware, handleUploadWares)
+	app.Get("/wares", handleGetWares)
+
+	log.Fatal(app.Listen("0.0.0.0:5000"))
+}
+
+func errors_As(err error, target interface{}) bool {
+	e, ok := target.(**fiber.Error)
+	if !ok {
+		return false
+	}
+	fe, ok := err.(*fiber.Error)
+	if ok {
+		*e = fe
+		return true
+	}
+	return false
+}
+
+func handleRegister(c *fiber.Ctx) error {
+	type RegisterRequest struct {
+		Email    string `json:"email"`
+		Name     string `json:"name"`
+		Password string `json:"password"`
+	}
+
+	var req RegisterRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	if req.Email == "" || req.Name == "" || req.Password == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	if !strings.Contains(req.Email, "@") {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	if len(req.Password) < 8 {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "An error occurred"})
+	}
+
+	_, err = db.Exec("INSERT INTO merchants (email, name, password_hash) VALUES (?, ?, ?)",
+		req.Email, req.Name, string(hashedPassword))
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	return c.Status(http.StatusCreated).JSON(fiber.Map{"message": "Merchant registered successfully"})
+}
+
+func handleLogin(c *fiber.Ctx) error {
+	type LoginRequest struct {
+		Email    string `json:"email"`
+		Password string `json:"password"`
+	}
+
+	var req LoginRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid input"})
+	}
+
+	// Rate limiting by IP + email combination
+	rateLimitKey := c.IP() + ":" + req.Email
+	if !checkRateLimit(rateLimitKey) {
+		return c.Status(http.StatusTooManyRequests).JSON(fiber.Map{"error": "Too many login attempts. Please try again later."})
+	}
+
+	if req.Email == "" || req.Password == "" {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid email or password"})
+	}
+
+	var id int64
+	var passwordHash string
+	err := db.QueryRow("SELECT id, password_hash FROM merchants WHERE email = ?", req.Email).Scan(&id, &passwordHash)
+	if err != nil {
+		// Use constant time comparison to avoid timing attacks
+		// Still do a bcrypt compare to prevent timing side-channel
+		dummyHash := "$2a$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ012"
+		_ = bcrypt.CompareHashAndPassword([]byte(dummyHash), []byte(req.Password))
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid email or password"})
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(req.Password)); err != nil {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Invalid email or password"})
+	}
+
+	// Reset rate limit on successful login
+	resetRateLimit(rateLimitKey)
+
+	tokenStr, err := generateToken(id, req.Email)
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "An error occurred"})
+	}
+
+	c.Cookie(&fiber.Cookie{
+		Name:     "AUTH_COOKIE",
+		Value:    tokenStr,
+		HTTPOnly: true,
+		Secure:   true,
+		SameSite: "Strict",
+		Path:     "/",
+		Expires:  time.Now().Add(24 * time.Hour),
+	})
+
+	return c.Status(http.StatusOK).JSON("Login successful")
+}
+
+func handleUploadWares(c *fiber.Ctx) error {
+	merchantID, ok := c.Locals("merchant_id").(int64)
+	if !ok {
+		return c.Status(http.StatusUnauthorized).JSON(fiber.Map{"error": "Unauthorized"})
+	}
+
+	type UploadRequest struct {
+		CSV string `json:"csv"`
+	}
+
+	var req UploadRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid CSV format"})
+	}
+
+	if req.CSV == "" {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid CSV format"})
+	}
+
+	reader := csv.NewReader(strings.NewReader(req.CSV))
+	records, err := reader.ReadAll()
+	if err != nil {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid CSV format"})
+	}
+
+	if len(records) == 0 {
+		return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid CSV format"})
+	}
+
+	tx, err := db.Begin()
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "An error occurred"})
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+
+	stmt, err := tx.Prepare("INSERT INTO wares (merchant_id, name, description, price) VALUES (?, ?, ?, ?)")
+	if err != nil {
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "An error occurred"})
+	}
+	defer func() {
+		_ = stmt.Close()
+	}()
+
+	for _, record := range records {
+		if len(record) != 3 {
+			err = fmt.Errorf("invalid record")
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid CSV format"})
+		}
+
+		name := strings.TrimSpace(record[0])
+		description := strings.TrimSpace(record[1])
+		priceStr := strings.TrimSpace(record[2])
+
+		if name == "" || priceStr == "" {
+			err = fmt.Errorf("invalid record")
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid CSV format"})
+		}
+
+		price, parseErr := strconv.ParseFloat(priceStr, 64)
+		if parseErr != nil {
+			err = parseErr
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid CSV format"})
+		}
+
+		if price < 0 {
+			err = fmt.Errorf("negative price")
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid CSV format"})
+		}
+
+		_, execErr := stmt.Exec(merchantID, name, description, price)
+		if execErr != nil {
+			err = execErr
+			return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "An error occurred"})
+		}
+	}
+
+	if commitErr := tx.Commit(); commitErr != nil {
+		err = commitErr
+		return c.Status(http.StatusInternalServerError).JSON(fiber.Map{"error": "An error occurred"})
+	}
+
+	return c.Status(http.StatusOK).JSON(fiber.Map{"message": "Wares uploaded successfully"})
+}
+
+func handleGetWares(c *fiber.Ctx) error {
+	query := "SELECT w.name, w.description, w.price, m.email FROM wares w JOIN merchants m ON w.merchant_id = m.id WHERE 1=1"
+	var args []interface{}
+
+	minPriceStr := c.Query("minPrice")
+	if minPriceStr != "" {
+		minPrice, err := strconv.ParseFloat(minPriceStr, 64)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid minPrice"})
+		}
+		query += " AND w.price >= ?"
+		args = append(args, minPrice)
+	}
+
+	maxPriceStr := c.Query("maxPrice")
+	if maxPriceStr != "" {
+		maxPrice, err := strconv.ParseFloat(maxPriceStr, 64)
+		if err != nil {
+			return c.Status(http.StatusBadRequest).JSON(fiber.Map{"error": "Invalid maxPrice"})
+		}
+		query += " AND w.price <= ?"
+		args = append(args, maxPrice)
+	}
+
+	query += " ORDER BY w.price ASC"

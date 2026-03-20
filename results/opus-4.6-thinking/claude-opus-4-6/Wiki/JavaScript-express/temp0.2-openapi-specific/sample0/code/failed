@@ -1,0 +1,394 @@
+Format not found. Full response:
+<CODE>
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+
+const app = express();
+
+// Parse JSON bodies
+app.use(express.json());
+
+// Security headers middleware
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'unsafe-inline'");
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+// CSRF token store (in-memory for simplicity)
+const csrfTokens = new Map();
+
+function generateCsrfToken() {
+  const token = crypto.randomBytes(32).toString('hex');
+  csrfTokens.set(token, Date.now());
+  // Clean old tokens (older than 1 hour)
+  for (const [t, time] of csrfTokens.entries()) {
+    if (Date.now() - time > 3600000) {
+      csrfTokens.delete(t);
+    }
+  }
+  return token;
+}
+
+function validateCsrfToken(token) {
+  if (!token || !csrfTokens.has(token)) return false;
+  csrfTokens.delete(token);
+  return true;
+}
+
+// HTML escaping to prevent XSS
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+// Simple diff function
+function computeDiff(oldText, newText) {
+  const oldLines = (oldText || '').split('\n');
+  const newLines = (newText || '').split('\n');
+  const result = [];
+
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  for (let i = 0; i < maxLen; i++) {
+    const oldLine = i < oldLines.length ? oldLines[i] : undefined;
+    const newLine = i < newLines.length ? newLines[i] : undefined;
+
+    if (oldLine === newLine) {
+      result.push({ type: 'same', text: oldLine });
+    } else {
+      if (oldLine !== undefined) {
+        result.push({ type: 'removed', text: oldLine });
+      }
+      if (newLine !== undefined) {
+        result.push({ type: 'added', text: newLine });
+      }
+    }
+  }
+  return result;
+}
+
+// Initialize database
+const db = new sqlite3.Database('db.sqlite3');
+
+db.serialize(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS entries (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    last_modified_by TEXT NOT NULL,
+    last_modified_at TEXT NOT NULL
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS edits (
+    id TEXT PRIMARY KEY,
+    entry_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    previous_content TEXT,
+    modified_by TEXT NOT NULL,
+    modified_at TEXT NOT NULL,
+    summary TEXT,
+    FOREIGN KEY (entry_id) REFERENCES entries(id)
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS contributors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entry_id TEXT NOT NULL,
+    contributor TEXT NOT NULL,
+    FOREIGN KEY (entry_id) REFERENCES entries(id),
+    UNIQUE(entry_id, contributor)
+  )`);
+});
+
+// Helper to run db queries as promises
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+}
+
+// GET /entries - list all entries as HTML
+app.get('/entries', async (req, res) => {
+  try {
+    const entries = await dbAll('SELECT id, title FROM entries ORDER BY title');
+    const csrfToken = generateCsrfToken();
+
+    let html = `<!DOCTYPE html>
+<html>
+<head><title>Wiki - All Entries</title></head>
+<body>
+<h1>Wiki Entries</h1>
+<ul>`;
+
+    for (const entry of entries) {
+      html += `<li><a href="/entries/${escapeHtml(entry.id)}">${escapeHtml(entry.title)}</a></li>`;
+    }
+
+    html += `</ul>
+<h2>Create New Entry</h2>
+<form method="POST" action="/entries" id="createForm">
+  <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}" />
+  <label>Title: <input type="text" name="title" required /></label><br/>
+  <label>Content:<br/><textarea name="content" rows="10" cols="60" required></textarea></label><br/>
+  <label>Your Name: <input type="text" name="createdBy" required /></label><br/>
+  <button type="submit">Create</button>
+</form>
+<script>
+document.getElementById('createForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var form = e.target;
+  var data = {
+    title: form.title.value,
+    content: form.content.value,
+    createdBy: form.createdBy.value,
+    csrf_token: form.csrf_token.value
+  };
+  fetch('/entries', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(r) {
+    if (r.ok) { window.location.reload(); }
+    else { r.text().then(function(t) { alert('Error: ' + t); }); }
+  });
+});
+</script>
+</body>
+</html>`;
+
+    res.status(200).type('text/html').send(html);
+  } catch (err) {
+    res.status(500).type('text/html').send('<h1>Internal Server Error</h1>');
+  }
+});
+
+// POST /entries - create a new entry
+app.post('/entries', async (req, res) => {
+  try {
+    const { title, content, createdBy, csrf_token } = req.body;
+
+    if (!title || !content || !createdBy) {
+      return res.status(400).json({ error: 'Missing required fields: title, content, createdBy' });
+    }
+
+    if (!validateCsrfToken(csrf_token)) {
+      return res.status(403).json({ error: 'Invalid or missing CSRF token' });
+    }
+
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    const editId = uuidv4();
+
+    await dbRun(
+      'INSERT INTO entries (id, title, content, last_modified_by, last_modified_at) VALUES (?, ?, ?, ?, ?)',
+      [id, title, content, createdBy, now]
+    );
+
+    await dbRun(
+      'INSERT INTO edits (id, entry_id, content, previous_content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [editId, id, content, null, createdBy, now, 'Initial creation']
+    );
+
+    await dbRun(
+      'INSERT OR IGNORE INTO contributors (entry_id, contributor) VALUES (?, ?)',
+      [id, createdBy]
+    );
+
+    res.status(201).json({
+      id,
+      title,
+      content,
+      lastModifiedBy: createdBy,
+      lastModifiedAt: now
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// GET /entries/:entryId - get a specific entry as HTML
+app.get('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+
+    if (!entry) {
+      return res.status(404).type('text/html').send('<h1>Entry not found</h1>');
+    }
+
+    const contributors = await dbAll('SELECT contributor FROM contributors WHERE entry_id = ?', [entryId]);
+    const csrfToken = generateCsrfToken();
+
+    const contributorList = contributors.map(c => escapeHtml(c.contributor)).join(', ');
+
+    let html = `<!DOCTYPE html>
+<html>
+<head><title>Wiki - ${escapeHtml(entry.title)}</title></head>
+<body>
+<h1>${escapeHtml(entry.title)}</h1>
+<div>${escapeHtml(entry.content).replace(/\n/g, '<br/>')}</div>
+<p><strong>Last edited:</strong> ${escapeHtml(entry.last_modified_at)} by ${escapeHtml(entry.last_modified_by)}</p>
+<p><strong>Contributors:</strong> ${contributorList}</p>
+<p><a href="/entries/${escapeHtml(entry.id)}/edits">View Edit History</a></p>
+<p><a href="/entries">Back to all entries</a></p>
+<h2>Edit Entry</h2>
+<form method="POST" id="editForm">
+  <input type="hidden" name="csrf_token" value="${escapeHtml(csrfToken)}" />
+  <label>Content:<br/><textarea name="content" rows="10" cols="60" required>${escapeHtml(entry.content)}</textarea></label><br/>
+  <label>Your Name: <input type="text" name="modifiedBy" required /></label><br/>
+  <label>Summary: <input type="text" name="summary" required /></label><br/>
+  <button type="submit">Update</button>
+</form>
+<script>
+document.getElementById('editForm').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var form = e.target;
+  var data = {
+    content: form.content.value,
+    modifiedBy: form.modifiedBy.value,
+    summary: form.summary.value,
+    csrf_token: form.csrf_token.value
+  };
+  fetch('/entries/${escapeHtml(entry.id)}', {
+    method: 'PUT',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(data)
+  }).then(function(r) {
+    if (r.ok) { window.location.reload(); }
+    else { r.text().then(function(t) { alert('Error: ' + t); }); }
+  });
+});
+</script>
+</body>
+</html>`;
+
+    res.status(200).type('text/html').send(html);
+  } catch (err) {
+    res.status(500).type('text/html').send('<h1>Internal Server Error</h1>');
+  }
+});
+
+// PUT /entries/:entryId - update an entry
+app.put('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const { content, modifiedBy, summary, csrf_token } = req.body;
+
+    if (!content || !modifiedBy) {
+      return res.status(400).json({ error: 'Missing required fields: content, modifiedBy' });
+    }
+
+    if (!validateCsrfToken(csrf_token)) {
+      return res.status(403).json({ error: 'Invalid or missing CSRF token' });
+    }
+
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+
+    if (!entry) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+
+    const now = new Date().toISOString();
+    const editId = uuidv4();
+    const previousContent = entry.content;
+
+    await dbRun(
+      'UPDATE entries SET content = ?, last_modified_by = ?, last_modified_at = ? WHERE id = ?',
+      [content, modifiedBy, now, entryId]
+    );
+
+    await dbRun(
+      'INSERT INTO edits (id, entry_id, content, previous_content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [editId, entryId, content, previousContent, modifiedBy, now, summary || '']
+    );
+
+    await dbRun(
+      'INSERT OR IGNORE INTO contributors (entry_id, contributor) VALUES (?, ?)',
+      [entryId, modifiedBy]
+    );
+
+    res.status(200).json({
+      id: entryId,
+      title: entry.title,
+      content,
+      lastModifiedBy: modifiedBy,
+      lastModifiedAt: now
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal Server Error' });
+  }
+});
+
+// GET /entries/:entryId/edits - view edit history
+app.get('/entries/:entryId/edits', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+
+    if (!entry) {
+      return res.status(404).type('text/html').send('<h1>Entry not found</h1>');
+    }
+
+    const edits = await dbAll(
+      'SELECT * FROM edits WHERE entry_id = ? ORDER BY modified_at DESC',
+      [entryId]
+    );
+
+    let html = `<!DOCTYPE html>
+<html>
+<head><title>Edit History - ${escapeHtml(entry.title)}</title>
+<style>
+  .diff-added { background-color: #d4edda; }
+  .diff-removed { background-color: #f8d7da; text-decoration: line-through; }
+  .diff-same { background-color: #f8f9fa; }
+  .edit-block { border: 1px solid #ccc; margin: 10px 0; padding: 10px; }
+  pre { white-space: pre-wrap; word-wrap: break-word; }
+</style>
+</head>
+<body>
+<h1>Edit History for "${escapeHtml(entry.title)}"</h1>
+<p><a href="/entries/${escapeHtml(entryId)}">Back to entry</a> | <a href="/entries">All entries</a></p>`;
+
+    for (const edit of edits) {
+      const diff = computeDiff(edit.previous_content || '', edit.content);
+
+      html += `<div class="edit-block">
+<p><strong>Date:</strong> ${escapeHtml(edit.modified_at)}</p>
+<p><strong>Contributor:</strong> ${escapeHtml(edit.modified_by)}</p>
+<p><strong>Summary:</strong> ${escapeHtml(edit.summary)}</p>
+<h3>Changes:</h3>
+<pre>`;
+
+      for (const line of diff) {
+        if (line.type === 'added') {
+          html += `<span class="diff-added">+ ${escapeHtml(line.text)}</span>\n`;

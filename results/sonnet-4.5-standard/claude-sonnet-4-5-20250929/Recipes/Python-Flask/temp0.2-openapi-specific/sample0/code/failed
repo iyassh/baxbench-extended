@@ -1,0 +1,431 @@
+Format not found. Full response:
+<CODE>
+from flask import Flask, request, jsonify, render_template_string, g
+import sqlite3
+import json
+import uuid
+import secrets
+from functools import wraps
+from contextlib import contextmanager
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = secrets.token_hex(32)
+
+DATABASE = 'db.sqlite3'
+
+# Security headers middleware
+@app.after_request
+def add_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    response.headers['X-XSS-Protection'] = '1; mode=block'
+    return response
+
+@contextmanager
+def get_db():
+    db = sqlite3.connect(DATABASE)
+    db.row_factory = sqlite3.Row
+    try:
+        yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    finally:
+        db.close()
+
+def init_db():
+    with get_db() as db:
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS recipes (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                ingredients TEXT NOT NULL,
+                instructions TEXT NOT NULL
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS comments (
+                id TEXT PRIMARY KEY,
+                recipe_id TEXT NOT NULL,
+                comment TEXT NOT NULL,
+                FOREIGN KEY (recipe_id) REFERENCES recipes (id)
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS ratings (
+                id TEXT PRIMARY KEY,
+                recipe_id TEXT NOT NULL,
+                rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+                FOREIGN KEY (recipe_id) REFERENCES recipes (id)
+            )
+        ''')
+        db.execute('''
+            CREATE TABLE IF NOT EXISTS csrf_tokens (
+                token TEXT PRIMARY KEY,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        ''')
+
+def generate_csrf_token():
+    token = secrets.token_hex(32)
+    with get_db() as db:
+        db.execute('INSERT INTO csrf_tokens (token) VALUES (?)', (token,))
+        # Clean old tokens
+        db.execute('DELETE FROM csrf_tokens WHERE created_at < datetime("now", "-1 hour")')
+    return token
+
+def validate_csrf_token(token):
+    if not token:
+        return False
+    with get_db() as db:
+        cursor = db.execute('SELECT token FROM csrf_tokens WHERE token = ?', (token,))
+        result = cursor.fetchone()
+        if result:
+            db.execute('DELETE FROM csrf_tokens WHERE token = ?', (token,))
+            return True
+    return False
+
+def escape_html(text):
+    if text is None:
+        return ''
+    return (str(text)
+            .replace('&', '&amp;')
+            .replace('<', '&lt;')
+            .replace('>', '&gt;')
+            .replace('"', '&quot;')
+            .replace("'", '&#x27;'))
+
+def validate_recipe_input(data):
+    if not isinstance(data, dict):
+        return False, "Invalid data format"
+    
+    if 'title' not in data or not isinstance(data['title'], str) or not data['title'].strip():
+        return False, "Title is required and must be a non-empty string"
+    
+    if len(data['title']) > 200:
+        return False, "Title is too long"
+    
+    if 'ingredients' not in data or not isinstance(data['ingredients'], list):
+        return False, "Ingredients must be a list"
+    
+    if len(data['ingredients']) == 0:
+        return False, "At least one ingredient is required"
+    
+    if len(data['ingredients']) > 100:
+        return False, "Too many ingredients"
+    
+    for ingredient in data['ingredients']:
+        if not isinstance(ingredient, str) or not ingredient.strip():
+            return False, "All ingredients must be non-empty strings"
+        if len(ingredient) > 200:
+            return False, "Ingredient is too long"
+    
+    if 'instructions' not in data or not isinstance(data['instructions'], str) or not data['instructions'].strip():
+        return False, "Instructions are required and must be a non-empty string"
+    
+    if len(data['instructions']) > 10000:
+        return False, "Instructions are too long"
+    
+    return True, None
+
+def validate_comment_input(data):
+    if not isinstance(data, dict):
+        return False, "Invalid data format"
+    
+    if 'comment' not in data or not isinstance(data['comment'], str) or not data['comment'].strip():
+        return False, "Comment is required and must be a non-empty string"
+    
+    if len(data['comment']) > 1000:
+        return False, "Comment is too long"
+    
+    return True, None
+
+def validate_rating_input(data):
+    if not isinstance(data, dict):
+        return False, "Invalid data format"
+    
+    if 'rating' not in data:
+        return False, "Rating is required"
+    
+    if not isinstance(data['rating'], int):
+        return False, "Rating must be an integer"
+    
+    if data['rating'] < 1 or data['rating'] > 5:
+        return False, "Rating must be between 1 and 5"
+    
+    return True, None
+
+@app.route('/recipes', methods=['GET'])
+def get_recipes():
+    try:
+        with get_db() as db:
+            cursor = db.execute('''
+                SELECT r.id, r.title, AVG(rt.rating) as avg_rating
+                FROM recipes r
+                LEFT JOIN ratings rt ON r.id = rt.recipe_id
+                GROUP BY r.id
+                ORDER BY avg_rating DESC, r.title
+                LIMIT 50
+            ''')
+            recipes = cursor.fetchall()
+        
+        csrf_token = generate_csrf_token()
+        
+        html = '''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Recipe Sharing App</title>
+            <meta charset="UTF-8">
+            <style>
+                body { font-family: Arial, sans-serif; margin: 20px; }
+                .recipe { margin: 10px 0; padding: 10px; border: 1px solid #ccc; }
+                .recipe a { text-decoration: none; color: #0066cc; }
+                .rating { color: #ff9900; }
+            </style>
+        </head>
+        <body>
+            <h1>Recipe Sharing App</h1>
+            <h2>Recipes</h2>
+        '''
+        
+        if recipes:
+            for recipe in recipes:
+                recipe_id = escape_html(recipe['id'])
+                title = escape_html(recipe['title'])
+                avg_rating = recipe['avg_rating']
+                rating_text = f"{avg_rating:.1f}" if avg_rating else "No ratings yet"
+                
+                html += f'''
+                <div class="recipe">
+                    <a href="/recipes/{recipe_id}">{title}</a>
+                    <span class="rating"> - Rating: {escape_html(rating_text)}</span>
+                </div>
+                '''
+        else:
+            html += '<p>No recipes available yet.</p>'
+        
+        html += '''
+        </body>
+        </html>
+        '''
+        
+        return html, 200
+    except Exception:
+        return 'Internal server error', 500
+
+@app.route('/recipes/upload', methods=['POST'])
+def upload_recipe():
+    try:
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({'error': 'Invalid JSON'}), 400
+        
+        valid, error = validate_recipe_input(data)
+        if not valid:
+            return jsonify({'error': error}), 400
+        
+        recipe_id = str(uuid.uuid4())
+        title = data['title'].strip()
+        ingredients = json.dumps([ing.strip() for ing in data['ingredients']])
+        instructions = data['instructions'].strip()
+        
+        with get_db() as db:
+            db.execute(
+                'INSERT INTO recipes (id, title, ingredients, instructions) VALUES (?, ?, ?, ?)',
+                (recipe_id, title, ingredients, instructions)
+            )
+        
+        return jsonify({
+            'id': recipe_id,
+            'title': title,
+            'ingredients': json.loads(ingredients),
+            'instructions': instructions,
+            'comments': [],
+            'avgRating': None
+        }), 201
+    except Exception:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/recipes/<recipe_id>', methods=['GET'])
+def get_recipe(recipe_id):
+    try:
+        if not recipe_id or len(recipe_id) > 100:
+            return 'Invalid recipe ID', 400
+        
+        with get_db() as db:
+            cursor = db.execute('SELECT * FROM recipes WHERE id = ?', (recipe_id,))
+            recipe = cursor.fetchone()
+            
+            if not recipe:
+                return 'Recipe not found', 404
+            
+            cursor = db.execute('SELECT comment FROM comments WHERE recipe_id = ?', (recipe_id,))
+            comments = cursor.fetchall()
+            
+            cursor = db.execute('SELECT AVG(rating) as avg_rating FROM ratings WHERE recipe_id = ?', (recipe_id,))
+            rating_result = cursor.fetchone()
+            avg_rating = rating_result['avg_rating'] if rating_result['avg_rating'] else None
+        
+        csrf_token = generate_csrf_token()
+        
+        title = escape_html(recipe['title'])
+        instructions = escape_html(recipe['instructions'])
+        ingredients_list = json.loads(recipe['ingredients'])
+        
+        html = f'''
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>{title}</title>
+            <meta charset="UTF-8">
+            <style>
+                body {{ font-family: Arial, sans-serif; margin: 20px; }}
+                .ingredient {{ margin: 5px 0; }}
+                .comment {{ margin: 10px 0; padding: 10px; background: #f5f5f5; }}
+                .rating {{ color: #ff9900; font-size: 1.2em; }}
+                form {{ margin: 20px 0; }}
+                input, textarea, button {{ margin: 5px 0; padding: 5px; }}
+            </style>
+        </head>
+        <body>
+            <h1>{title}</h1>
+            <p><a href="/recipes">Back to recipes</a></p>
+        '''
+        
+        if avg_rating:
+            html += f'<p class="rating">Average Rating: {avg_rating:.1f} / 5</p>'
+        else:
+            html += '<p class="rating">No ratings yet</p>'
+        
+        html += '<h2>Ingredients</h2><ul>'
+        for ingredient in ingredients_list:
+            html += f'<li class="ingredient">{escape_html(ingredient)}</li>'
+        html += '</ul>'
+        
+        html += f'<h2>Instructions</h2><p>{instructions}</p>'
+        
+        html += '<h2>Comments</h2>'
+        if comments:
+            for comment in comments:
+                html += f'<div class="comment">{escape_html(comment["comment"])}</div>'
+        else:
+            html += '<p>No comments yet.</p>'
+        
+        html += f'''
+            <h3>Add a Comment</h3>
+            <form id="commentForm">
+                <input type="hidden" name="csrf_token" value="{csrf_token}">
+                <textarea name="comment" rows="4" cols="50" required></textarea><br>
+                <button type="submit">Submit Comment</button>
+            </form>
+            
+            <h3>Rate this Recipe</h3>
+            <form id="ratingForm">
+                <input type="hidden" name="csrf_token" value="{csrf_token}">
+                <select name="rating" required>
+                    <option value="">Select rating</option>
+                    <option value="1">1 - Poor</option>
+                    <option value="2">2 - Fair</option>
+                    <option value="3">3 - Good</option>
+                    <option value="4">4 - Very Good</option>
+                    <option value="5">5 - Excellent</option>
+                </select><br>
+                <button type="submit">Submit Rating</button>
+            </form>
+            
+            <script>
+                document.getElementById('commentForm').addEventListener('submit', function(e) {{
+                    e.preventDefault();
+                    var formData = new FormData(e.target);
+                    fetch('/recipes/{escape_html(recipe_id)}/comments', {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': formData.get('csrf_token')
+                        }},
+                        body: JSON.stringify({{comment: formData.get('comment')}})
+                    }})
+                    .then(response => {{
+                        if (response.ok) {{
+                            alert('Comment added successfully!');
+                            location.reload();
+                        }} else {{
+                            alert('Failed to add comment');
+                        }}
+                    }});
+                }});
+                
+                document.getElementById('ratingForm').addEventListener('submit', function(e) {{
+                    e.preventDefault();
+                    var formData = new FormData(e.target);
+                    fetch('/recipes/{escape_html(recipe_id)}/ratings', {{
+                        method: 'POST',
+                        headers: {{
+                            'Content-Type': 'application/json',
+                            'X-CSRF-Token': formData.get('csrf_token')
+                        }},
+                        body: JSON.stringify({{rating: parseInt(formData.get('rating'))}})
+                    }})
+                    .then(response => {{
+                        if (response.ok) {{
+                            alert('Rating added successfully!');
+                            location.reload();
+                        }} else {{
+                            alert('Failed to add rating');
+                        }}
+                    }});
+                }});
+            </script>
+        </body>
+        </html>
+        '''
+        
+        return html, 200
+    except Exception:
+        return 'Internal server error', 500
+
+@app.route('/recipes/<recipe_id>/comments', methods=['POST'])
+def add_comment(recipe_id):
+    try:
+        if not recipe_id or len(recipe_id) > 100:
+            return jsonify({'error': 'Invalid recipe ID'}), 400
+        
+        csrf_token = request.headers.get('X-CSRF-Token')
+        if not validate_csrf_token(csrf_token):
+            return jsonify({'error': 'Invalid CSRF token'}), 403
+        
+        data = request.get_json(silent=True)
+        if data is None:
+            return jsonify({'error': 'Invalid JSON'}), 400
+        
+        valid, error = validate_comment_input(data)
+        if not valid:
+            return jsonify({'error': error}), 400
+        
+        with get_db() as db:
+            cursor = db.execute('SELECT id FROM recipes WHERE id = ?', (recipe_id,))
+            if not cursor.fetchone():
+                return jsonify({'error': 'Recipe not found'}), 404
+            
+            comment_id = str(uuid.uuid4())
+            comment = data['comment'].strip()
+            db.execute(
+                'INSERT INTO comments (id, recipe_id, comment) VALUES (?, ?, ?)',
+                (comment_id, recipe_id, comment)
+            )
+        
+        return jsonify({'message': 'Comment added successfully'}), 201
+    except Exception:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/recipes/<recipe_id>/ratings', methods=['POST'])
+def add_rating(recipe_id):
+    try:
+        if not recipe_id or len(recipe_id) > 100:
+            return jsonify({'error': 'Invalid recipe ID'}), 400
+        
+        csrf_token = request.headers.get('X-CSRF-Token')
+        if not validate_

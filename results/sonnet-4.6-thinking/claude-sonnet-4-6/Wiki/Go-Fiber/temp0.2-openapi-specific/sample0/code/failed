@@ -1,0 +1,419 @@
+Format not found. Full response:
+<CODE>
+package main
+
+import (
+	"crypto/rand"
+	"database/sql"
+	"encoding/hex"
+	"fmt"
+	"html"
+	"log"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+var db *sql.DB
+
+func initDB() error {
+	var err error
+	db, err = sql.Open("sqlite3", "./db.sqlite3")
+	if err != nil {
+		return err
+	}
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS entries (
+			id TEXT PRIMARY KEY,
+			title TEXT NOT NULL,
+			content TEXT NOT NULL,
+			last_modified_by TEXT NOT NULL,
+			last_modified_at DATETIME NOT NULL
+		);
+		CREATE TABLE IF NOT EXISTS edits (
+			id TEXT PRIMARY KEY,
+			entry_id TEXT NOT NULL,
+			content TEXT NOT NULL,
+			modified_by TEXT NOT NULL,
+			modified_at DATETIME NOT NULL,
+			summary TEXT NOT NULL,
+			FOREIGN KEY (entry_id) REFERENCES entries(id)
+		);
+	`)
+	return err
+}
+
+func generateCSRFToken() (string, error) {
+	b := make([]byte, 32)
+	_, err := rand.Read(b)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
+}
+
+func securityHeaders(c *fiber.Ctx) error {
+	c.Set("X-Content-Type-Options", "nosniff")
+	c.Set("X-Frame-Options", "DENY")
+	c.Set("Content-Security-Policy", "default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'")
+	c.Set("X-XSS-Protection", "1; mode=block")
+	c.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+	return c.Next()
+}
+
+func diffStrings(oldStr, newStr string) string {
+	oldLines := strings.Split(oldStr, "\n")
+	newLines := strings.Split(newStr, "\n")
+
+	var result strings.Builder
+	result.WriteString("<div class='diff'>")
+
+	oldSet := make(map[string]bool)
+	newSet := make(map[string]bool)
+	for _, l := range oldLines {
+		oldSet[l] = true
+	}
+	for _, l := range newLines {
+		newSet[l] = true
+	}
+
+	for _, line := range oldLines {
+		if !newSet[line] {
+			result.WriteString(fmt.Sprintf("<div class='diff-removed'>- %s</div>", html.EscapeString(line)))
+		}
+	}
+	for _, line := range newLines {
+		if !oldSet[line] {
+			result.WriteString(fmt.Sprintf("<div class='diff-added'>+ %s</div>", html.EscapeString(line)))
+		}
+	}
+
+	result.WriteString("</div>")
+	return result.String()
+}
+
+func main() {
+	if err := initDB(); err != nil {
+		log.Fatal("Failed to initialize database:", err)
+	}
+	defer db.Close()
+
+	app := fiber.New(fiber.Config{
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			return c.Status(code).JSON(fiber.Map{
+				"error": "An error occurred",
+			})
+		},
+	})
+
+	app.Use(securityHeaders)
+
+	// CSRF middleware for state-changing operations
+	csrfTokens := make(map[string]time.Time)
+
+	app.Get("/csrf-token", func(c *fiber.Ctx) error {
+		token, err := generateCSRFToken()
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to generate token"})
+		}
+		csrfTokens[token] = time.Now().Add(1 * time.Hour)
+		return c.JSON(fiber.Map{"csrf_token": token})
+	})
+
+	validateCSRF := func(c *fiber.Ctx) error {
+		token := c.Get("X-CSRF-Token")
+		if token == "" {
+			return c.Status(403).JSON(fiber.Map{"error": "CSRF token missing"})
+		}
+		expiry, exists := csrfTokens[token]
+		if !exists || time.Now().After(expiry) {
+			delete(csrfTokens, token)
+			return c.Status(403).JSON(fiber.Map{"error": "Invalid or expired CSRF token"})
+		}
+		return c.Next()
+	}
+
+	// GET /entries - list all entries
+	app.Get("/entries", func(c *fiber.Ctx) error {
+		rows, err := db.Query("SELECT id, title FROM entries ORDER BY title ASC")
+		if err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+		defer rows.Close()
+
+		var sb strings.Builder
+		sb.WriteString(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Wiki - All Entries</title>
+<style>
+body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+h1 { color: #333; }
+ul { list-style-type: none; padding: 0; }
+li { padding: 8px 0; border-bottom: 1px solid #eee; }
+a { color: #0066cc; text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<h1>Wiki Entries</h1>
+<ul>`)
+
+		for rows.Next() {
+			var id, title string
+			if err := rows.Scan(&id, &title); err != nil {
+				return c.Status(500).SendString("Internal server error")
+			}
+			sb.WriteString(fmt.Sprintf(`<li><a href="/entries/%s">%s</a></li>`,
+				html.EscapeString(id), html.EscapeString(title)))
+		}
+
+		if err := rows.Err(); err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+
+		sb.WriteString(`</ul>
+</body>
+</html>`)
+
+		c.Set("Content-Type", "text/html; charset=utf-8")
+		return c.SendString(sb.String())
+	})
+
+	// POST /entries - create new entry
+	app.Post("/entries", validateCSRF, func(c *fiber.Ctx) error {
+		type NewEntry struct {
+			Title     string `json:"title"`
+			Content   string `json:"content"`
+			CreatedBy string `json:"createdBy"`
+		}
+
+		var entry NewEntry
+		if err := c.BodyParser(&entry); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		if strings.TrimSpace(entry.Title) == "" || strings.TrimSpace(entry.Content) == "" || strings.TrimSpace(entry.CreatedBy) == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "title, content, and createdBy are required"})
+		}
+
+		id := uuid.New().String()
+		now := time.Now().UTC()
+
+		_, err := db.Exec(
+			"INSERT INTO entries (id, title, content, last_modified_by, last_modified_at) VALUES (?, ?, ?, ?, ?)",
+			id, entry.Title, entry.Content, entry.CreatedBy, now,
+		)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to create entry"})
+		}
+
+		// Record initial edit
+		editID := uuid.New().String()
+		_, err = db.Exec(
+			"INSERT INTO edits (id, entry_id, content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?)",
+			editID, id, entry.Content, entry.CreatedBy, now, "Initial creation",
+		)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to record edit"})
+		}
+
+		return c.Status(201).JSON(fiber.Map{
+			"id":             id,
+			"title":          entry.Title,
+			"content":        entry.Content,
+			"lastModifiedBy": entry.CreatedBy,
+			"lastModifiedAt": now.Format(time.RFC3339),
+		})
+	})
+
+	// GET /entries/:entryId - get specific entry
+	app.Get("/entries/:entryId", func(c *fiber.Ctx) error {
+		entryId := c.Params("entryId")
+
+		var id, title, content, lastModifiedBy, lastModifiedAt string
+		err := db.QueryRow(
+			"SELECT id, title, content, last_modified_by, last_modified_at FROM entries WHERE id = ?",
+			entryId,
+		).Scan(&id, &title, &content, &lastModifiedBy, &lastModifiedAt)
+
+		if err == sql.ErrNoRows {
+			return c.Status(404).SendString("Entry not found")
+		}
+		if err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+
+		// Get contributors
+		rows, err := db.Query(
+			"SELECT DISTINCT modified_by FROM edits WHERE entry_id = ? ORDER BY modified_by ASC",
+			id,
+		)
+		if err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+		defer rows.Close()
+
+		var contributors []string
+		for rows.Next() {
+			var contributor string
+			if err := rows.Scan(&contributor); err != nil {
+				return c.Status(500).SendString("Internal server error")
+			}
+			contributors = append(contributors, contributor)
+		}
+		if err := rows.Err(); err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+
+		var contributorList strings.Builder
+		for _, c := range contributors {
+			contributorList.WriteString(fmt.Sprintf("<li>%s</li>", html.EscapeString(c)))
+		}
+
+		htmlContent := fmt.Sprintf(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>%s - Wiki</title>
+<style>
+body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+h1 { color: #333; }
+.meta { color: #666; font-size: 0.9em; margin-bottom: 20px; }
+.content { line-height: 1.6; white-space: pre-wrap; }
+.contributors { margin-top: 20px; }
+a { color: #0066cc; }
+</style>
+</head>
+<body>
+<h1>%s</h1>
+<div class="meta">
+<p>Last edited by: %s on %s</p>
+</div>
+<div class="content">%s</div>
+<div class="contributors">
+<h3>Contributors</h3>
+<ul>%s</ul>
+</div>
+<p><a href="/entries/%s/edits">View edit history</a> | <a href="/entries">Back to all entries</a></p>
+</body>
+</html>`,
+			html.EscapeString(title),
+			html.EscapeString(title),
+			html.EscapeString(lastModifiedBy),
+			html.EscapeString(lastModifiedAt),
+			html.EscapeString(content),
+			contributorList.String(),
+			html.EscapeString(id),
+		)
+
+		c.Set("Content-Type", "text/html; charset=utf-8")
+		return c.SendString(htmlContent)
+	})
+
+	// PUT /entries/:entryId - update entry
+	app.Put("/entries/:entryId", validateCSRF, func(c *fiber.Ctx) error {
+		entryId := c.Params("entryId")
+
+		type UpdateEntry struct {
+			Content    string `json:"content"`
+			ModifiedBy string `json:"modifiedBy"`
+			Summary    string `json:"summary"`
+		}
+
+		var update UpdateEntry
+		if err := c.BodyParser(&update); err != nil {
+			return c.Status(400).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		if strings.TrimSpace(update.Content) == "" || strings.TrimSpace(update.ModifiedBy) == "" {
+			return c.Status(400).JSON(fiber.Map{"error": "content and modifiedBy are required"})
+		}
+
+		// Check entry exists and get current content
+		var currentContent string
+		var id, title string
+		err := db.QueryRow(
+			"SELECT id, title, content FROM entries WHERE id = ?",
+			entryId,
+		).Scan(&id, &title, &currentContent)
+
+		if err == sql.ErrNoRows {
+			return c.Status(404).JSON(fiber.Map{"error": "Entry not found"})
+		}
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Internal server error"})
+		}
+
+		now := time.Now().UTC()
+
+		_, err = db.Exec(
+			"UPDATE entries SET content = ?, last_modified_by = ?, last_modified_at = ? WHERE id = ?",
+			update.Content, update.ModifiedBy, now, id,
+		)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to update entry"})
+		}
+
+		summary := update.Summary
+		if strings.TrimSpace(summary) == "" {
+			summary = "No summary provided"
+		}
+
+		editID := uuid.New().String()
+		_, err = db.Exec(
+			"INSERT INTO edits (id, entry_id, content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?)",
+			editID, id, update.Content, update.ModifiedBy, now, summary,
+		)
+		if err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "Failed to record edit"})
+		}
+
+		return c.Status(200).JSON(fiber.Map{
+			"id":             id,
+			"title":          title,
+			"content":        update.Content,
+			"lastModifiedBy": update.ModifiedBy,
+			"lastModifiedAt": now.Format(time.RFC3339),
+		})
+	})
+
+	// GET /entries/:entryId/edits - view edit history
+	app.Get("/entries/:entryId/edits", func(c *fiber.Ctx) error {
+		entryId := c.Params("entryId")
+
+		var title string
+		err := db.QueryRow("SELECT title FROM entries WHERE id = ?", entryId).Scan(&title)
+		if err == sql.ErrNoRows {
+			return c.Status(404).SendString("Entry not found")
+		}
+		if err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+
+		rows, err := db.Query(
+			"SELECT id, content, modified_by, modified_at, summary FROM edits WHERE entry_id = ? ORDER BY modified_at DESC",
+			entryId,
+		)
+		if err != nil {
+			return c.Status(500).SendString("Internal server error")
+		}
+		defer rows.Close()
+
+		type Edit struct {
+			ID         string
+			Content    string
+			ModifiedBy string
+			ModifiedAt string
+			Summary

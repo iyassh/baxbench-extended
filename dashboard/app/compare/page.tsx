@@ -1,219 +1,181 @@
 import {
-  getThinkingComparison,
   getSafetyPromptComparison,
+  getSafetyPromptDelta,
+  getThinkingComparison,
+  getThinkingDelta,
   getFrameworkComparison,
-  getAllConfigs,
+  getDistributionByFamily,
 } from "@/lib/queries";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { SafetyComparisonChart } from "@/components/charts/safety-comparison-chart";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
+import { PageTransition } from "@/components/page-transition";
+import { CompareClient } from "@/components/compare/compare-client";
+import type { SafetyChartRow, SafetyDeltaRow } from "@/components/compare/safety-prompt-tab";
+import type { ThinkingChartRow, ThinkingDeltaRow } from "@/components/compare/thinking-tab";
+import type { FrameworkChartRow, FrameworkSummary } from "@/components/compare/frameworks-tab";
+import type { FamilyVizData } from "@/components/compare/families-tab";
 
 export default function ComparePage() {
+  // ── Fetch all comparison data ──────────────────────────
+  const safetyRaw = getSafetyPromptComparison();
+  const safetyDeltaRaw = getSafetyPromptDelta();
   const thinkingPairs = getThinkingComparison();
-  const safetyData = getSafetyPromptComparison();
-  const frameworkData = getFrameworkComparison();
-  const allConfigs = getAllConfigs().filter((c) => c.total_results > 0);
+  const thinkingDeltaRaw = getThinkingDelta();
+  const frameworkRaw = getFrameworkComparison();
+  const familyRaw = getDistributionByFamily();
 
-  // Build safety chart data
-  const safetyChartData: Record<string, { config_name: string; none: number; generic: number; specific: number }> = {};
-  for (const row of safetyData) {
-    if (!safetyChartData[row.config_name]) {
-      safetyChartData[row.config_name] = { config_name: row.config_name, none: 0, generic: 0, specific: 0 };
+  // ── Transform safety data ─────────────────────────────
+  const safetyByConfig: Record<
+    string,
+    { config: string; none: number; generic: number; specific: number }
+  > = {};
+  for (const row of safetyRaw) {
+    if (!safetyByConfig[row.config_name]) {
+      safetyByConfig[row.config_name] = {
+        config: row.config_name,
+        none: 0,
+        generic: 0,
+        specific: 0,
+      };
     }
-    const rate = row.total > 0 ? Math.round((row.secure_passes / row.total) * 1000) / 10 : 0;
-    safetyChartData[row.config_name][row.safety_prompt as "none" | "generic" | "specific"] = rate;
+    const rate =
+      row.total > 0
+        ? Math.round((row.secure_passes / row.total) * 1000) / 10
+        : 0;
+    const key = row.safety_prompt as "none" | "generic" | "specific";
+    if (key in safetyByConfig[row.config_name]) {
+      safetyByConfig[row.config_name][key] = rate;
+    }
+  }
+  const safetyChartData: SafetyChartRow[] = Object.values(safetyByConfig);
+
+  const safetyDeltaData: SafetyDeltaRow[] = safetyDeltaRaw.map((row) => ({
+    config: row.config,
+    none: Math.round(row.baseline * 1000) / 10,
+    specific: Math.round(row.comparison * 1000) / 10,
+    change: Math.round(row.delta * 1000) / 10,
+  }));
+
+  // Calculate average improvement
+  const safetyAvgImprovement =
+    safetyDeltaData.length > 0
+      ? safetyDeltaData.reduce((sum, r) => sum + r.change, 0) /
+        safetyDeltaData.length
+      : 0;
+
+  // ── Transform thinking data ───────────────────────────
+  const thinkingChartData: ThinkingChartRow[] = thinkingPairs.map((pair) => ({
+    family: pair.standard.name.replace("-standard", ""),
+    standard: Math.round(pair.standard.sec_pass_at_1 * 1000) / 10,
+    thinking: Math.round(pair.thinking.sec_pass_at_1 * 1000) / 10,
+  }));
+
+  const thinkingDeltaData: ThinkingDeltaRow[] = thinkingDeltaRaw.map(
+    (row) => ({
+      config: row.config,
+      standard: Math.round(row.baseline * 1000) / 10,
+      thinking: Math.round(row.comparison * 1000) / 10,
+      change: Math.round(row.delta * 1000) / 10,
+    })
+  );
+
+  // ── Transform framework data ──────────────────────────
+  const fwByConfig: Record<
+    string,
+    Record<string, { secure: number; total: number }>
+  > = {};
+  const fwTotals: Record<
+    string,
+    { sum: number; count: number; configs: { config: string; value: number }[] }
+  > = {};
+
+  for (const row of frameworkRaw) {
+    if (!fwByConfig[row.config_name]) {
+      fwByConfig[row.config_name] = {};
+    }
+    const rate =
+      row.total > 0
+        ? Math.round((row.secure_passes / row.total) * 1000) / 10
+        : 0;
+    fwByConfig[row.config_name][row.framework] = {
+      secure: row.secure_passes,
+      total: row.total,
+    };
+
+    if (!fwTotals[row.framework]) {
+      fwTotals[row.framework] = { sum: 0, count: 0, configs: [] };
+    }
+    fwTotals[row.framework].sum += rate;
+    fwTotals[row.framework].count += 1;
+    fwTotals[row.framework].configs.push({ config: row.config_name, value: rate });
   }
 
-  // Framework comparison
-  const fwByFramework: Record<string, typeof frameworkData> = {};
-  for (const row of frameworkData) {
-    if (!fwByFramework[row.framework]) fwByFramework[row.framework] = [];
-    fwByFramework[row.framework].push(row);
-  }
+  const frameworkChartData: FrameworkChartRow[] = Object.entries(fwByConfig).map(
+    ([config, fws]) => ({
+      config,
+      flask: fws["Python-Flask"]
+        ? Math.round(
+            (fws["Python-Flask"].secure / fws["Python-Flask"].total) * 1000
+          ) / 10
+        : 0,
+      express: fws["JavaScript-express"]
+        ? Math.round(
+            (fws["JavaScript-express"].secure /
+              fws["JavaScript-express"].total) *
+              1000
+          ) / 10
+        : 0,
+      fiber: fws["Go-Fiber"]
+        ? Math.round(
+            (fws["Go-Fiber"].secure / fws["Go-Fiber"].total) * 1000
+          ) / 10
+        : 0,
+    })
+  );
+
+  const frameworkSummaries: FrameworkSummary[] = Object.entries(fwTotals).map(
+    ([framework, data]) => {
+      const sorted = [...data.configs].sort((a, b) => b.value - a.value);
+      return {
+        framework,
+        average: data.count > 0 ? data.sum / data.count : 0,
+        best: sorted[0] || { config: "N/A", value: 0 },
+        worst: sorted[sorted.length - 1] || { config: "N/A", value: 0 },
+      };
+    }
+  );
+
+  // ── Transform family data ─────────────────────────────
+  const familyData: FamilyVizData[] = familyRaw.map((f) => ({
+    family: f.family,
+    configs: f.configs,
+    values: f.values,
+    median: f.median,
+    min: f.min,
+    max: f.max,
+  }));
 
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold">Comparisons</h1>
-        <p className="text-muted-foreground mt-1">
-          Side-by-side analysis across dimensions
-        </p>
+    <PageTransition>
+      <div className="space-y-8">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-zinc-100">
+            Compare
+          </h1>
+          <p className="text-zinc-400 mt-1">
+            Side-by-side analysis across dimensions
+          </p>
+        </div>
+
+        <CompareClient
+          safetyChartData={safetyChartData}
+          safetyDeltaData={safetyDeltaData}
+          safetyAvgImprovement={safetyAvgImprovement}
+          thinkingChartData={thinkingChartData}
+          thinkingDeltaData={thinkingDeltaData}
+          frameworkChartData={frameworkChartData}
+          frameworkSummaries={frameworkSummaries}
+          familyData={familyData}
+        />
       </div>
-
-      <Tabs defaultValue="safety">
-        <TabsList>
-          <TabsTrigger value="safety">Safety Prompts</TabsTrigger>
-          <TabsTrigger value="thinking">Thinking vs Standard</TabsTrigger>
-          <TabsTrigger value="frameworks">Frameworks</TabsTrigger>
-          <TabsTrigger value="tiers">Model Tiers</TabsTrigger>
-        </TabsList>
-
-        {/* Safety Prompts Tab */}
-        <TabsContent value="safety" className="space-y-6">
-          <h2 className="text-xl font-semibold">Effect of Safety Prompts on sec_pass@1</h2>
-          {Object.values(safetyChartData).length > 0 && (
-            <SafetyComparisonChart data={Object.values(safetyChartData)} />
-          )}
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Config</TableHead>
-                <TableHead className="text-right">None</TableHead>
-                <TableHead className="text-right">Generic</TableHead>
-                <TableHead className="text-right">Specific</TableHead>
-                <TableHead className="text-right">Improvement</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {Object.values(safetyChartData).map((row) => (
-                <TableRow key={row.config_name}>
-                  <TableCell className="font-medium">{row.config_name}</TableCell>
-                  <TableCell className="text-right">{row.none}%</TableCell>
-                  <TableCell className="text-right">{row.generic}%</TableCell>
-                  <TableCell className="text-right">{row.specific}%</TableCell>
-                  <TableCell className="text-right">
-                    <span className={row.specific > row.none ? "text-green-600" : "text-red-600"}>
-                      {row.specific - row.none > 0 ? "+" : ""}
-                      {(row.specific - row.none).toFixed(1)}pp
-                    </span>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </TabsContent>
-
-        {/* Thinking vs Standard Tab */}
-        <TabsContent value="thinking" className="space-y-6">
-          <h2 className="text-xl font-semibold">Thinking Mode vs Standard</h2>
-          {thinkingPairs.length === 0 ? (
-            <p className="text-muted-foreground">
-              No thinking/standard pairs with results yet. Run benchmarks for both modes to see this comparison.
-            </p>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Model</TableHead>
-                  <TableHead className="text-right">Standard sec_pass@1</TableHead>
-                  <TableHead className="text-right">Thinking sec_pass@1</TableHead>
-                  <TableHead className="text-right">Delta</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {thinkingPairs.map((pair) => {
-                  const delta = pair.thinking.sec_pass_at_1 - pair.standard.sec_pass_at_1;
-                  return (
-                    <TableRow key={pair.standard.name}>
-                      <TableCell className="font-medium">
-                        {pair.standard.name.replace("-standard", "")}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {(pair.standard.sec_pass_at_1 * 100).toFixed(1)}%
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {(pair.thinking.sec_pass_at_1 * 100).toFixed(1)}%
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <span className={delta > 0 ? "text-green-600" : delta < 0 ? "text-red-600" : ""}>
-                          {delta > 0 ? "+" : ""}{(delta * 100).toFixed(1)}pp
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          )}
-        </TabsContent>
-
-        {/* Frameworks Tab */}
-        <TabsContent value="frameworks" className="space-y-6">
-          <h2 className="text-xl font-semibold">Framework Comparison</h2>
-          {Object.entries(fwByFramework).map(([fw, rows]) => (
-            <div key={fw}>
-              <h3 className="text-lg font-medium mb-2">{fw}</h3>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Config</TableHead>
-                    <TableHead className="text-right">Total</TableHead>
-                    <TableHead className="text-right">pass@1</TableHead>
-                    <TableHead className="text-right">sec_pass@1</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {rows.map((row) => (
-                    <TableRow key={row.config_name}>
-                      <TableCell>{row.config_name}</TableCell>
-                      <TableCell className="text-right">{row.total}</TableCell>
-                      <TableCell className="text-right">
-                        {row.total > 0 ? ((row.functional_passes / row.total) * 100).toFixed(1) : 0}%
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {row.total > 0 ? ((row.secure_passes / row.total) * 100).toFixed(1) : 0}%
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          ))}
-        </TabsContent>
-
-        {/* Model Tiers Tab */}
-        <TabsContent value="tiers" className="space-y-6">
-          <h2 className="text-xl font-semibold">Model Tiers</h2>
-          <p className="text-muted-foreground">Haiku vs Sonnet vs Opus performance</p>
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Config</TableHead>
-                <TableHead>Tier</TableHead>
-                <TableHead className="text-right">Results</TableHead>
-                <TableHead className="text-right">pass@1</TableHead>
-                <TableHead className="text-right">sec_pass@1</TableHead>
-                <TableHead className="text-right">CWEs</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {allConfigs
-                .sort((a, b) => b.sec_pass_at_1 - a.sec_pass_at_1)
-                .map((c) => {
-                  const tier = c.name.includes("opus")
-                    ? "Opus"
-                    : c.name.includes("sonnet")
-                    ? "Sonnet"
-                    : "Haiku";
-                  return (
-                    <TableRow key={c.id}>
-                      <TableCell className="font-medium">{c.name}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline">{tier}</Badge>
-                      </TableCell>
-                      <TableCell className="text-right">{c.total_results}</TableCell>
-                      <TableCell className="text-right">
-                        {(c.pass_at_1 * 100).toFixed(1)}%
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {(c.sec_pass_at_1 * 100).toFixed(1)}%
-                      </TableCell>
-                      <TableCell className="text-right">{c.total_cwes}</TableCell>
-                    </TableRow>
-                  );
-                })}
-            </TableBody>
-          </Table>
-        </TabsContent>
-      </Tabs>
-    </div>
+    </PageTransition>
   );
 }

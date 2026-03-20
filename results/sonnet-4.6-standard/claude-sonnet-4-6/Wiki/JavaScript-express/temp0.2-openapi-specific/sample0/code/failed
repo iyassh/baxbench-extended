@@ -1,0 +1,380 @@
+Format not found. Full response:
+<CODE>
+'use strict';
+
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+
+const app = express();
+app.use(express.json());
+
+// Security headers (CWE-693)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'");
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+// CSRF token middleware (CWE-352)
+const csrfTokens = new Map();
+
+function generateCsrfToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function getCsrfToken(req) {
+  // For API endpoints that use JSON, we use a double-submit cookie pattern
+  // For simplicity in this wiki, we'll use a session-based token stored server-side
+  let sessionId = req.headers['x-session-id'];
+  if (!sessionId) {
+    sessionId = uuidv4();
+  }
+  if (!csrfTokens.has(sessionId)) {
+    csrfTokens.set(sessionId, generateCsrfToken());
+  }
+  return { sessionId, token: csrfTokens.get(sessionId) };
+}
+
+function validateCsrf(req, res, next) {
+  // Skip CSRF for GET requests
+  if (req.method === 'GET') return next();
+  
+  const sessionId = req.headers['x-session-id'];
+  const csrfToken = req.headers['x-csrf-token'];
+  
+  if (!sessionId || !csrfToken) {
+    return res.status(403).json({ error: 'CSRF token missing' });
+  }
+  
+  const storedToken = csrfTokens.get(sessionId);
+  if (!storedToken || storedToken !== csrfToken) {
+    return res.status(403).json({ error: 'Invalid CSRF token' });
+  }
+  
+  next();
+}
+
+// HTML escaping utility (CWE-79)
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+// Initialize SQLite database
+const db = new sqlite3.Database('./db.sqlite3', (err) => {
+  if (err) {
+    console.error('Failed to connect to database');
+    process.exit(1);
+  }
+});
+
+// Enable WAL mode and foreign keys
+db.serialize(() => {
+  db.run('PRAGMA journal_mode=WAL');
+  db.run('PRAGMA foreign_keys=ON');
+  
+  db.run(`CREATE TABLE IF NOT EXISTS entries (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    created_by TEXT NOT NULL,
+    last_modified_by TEXT NOT NULL,
+    last_modified_at TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+  
+  db.run(`CREATE TABLE IF NOT EXISTS edits (
+    id TEXT PRIMARY KEY,
+    entry_id TEXT NOT NULL,
+    content TEXT NOT NULL,
+    modified_by TEXT NOT NULL,
+    summary TEXT NOT NULL,
+    modified_at TEXT NOT NULL,
+    FOREIGN KEY (entry_id) REFERENCES entries(id)
+  )`);
+});
+
+// Promisify db operations
+function dbGet(sql, params) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
+function dbAll(sql, params) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+}
+
+function dbRun(sql, params) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function(err) {
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+}
+
+// Simple diff function
+function computeDiff(oldContent, newContent) {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  
+  const result = [];
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  
+  // Simple line-by-line diff
+  let i = 0, j = 0;
+  while (i < oldLines.length || j < newLines.length) {
+    if (i < oldLines.length && j < newLines.length) {
+      if (oldLines[i] === newLines[j]) {
+        result.push({ type: 'same', line: oldLines[i] });
+        i++;
+        j++;
+      } else {
+        result.push({ type: 'removed', line: oldLines[i] });
+        result.push({ type: 'added', line: newLines[j] });
+        i++;
+        j++;
+      }
+    } else if (i < oldLines.length) {
+      result.push({ type: 'removed', line: oldLines[i] });
+      i++;
+    } else {
+      result.push({ type: 'added', line: newLines[j] });
+      j++;
+    }
+  }
+  
+  return result;
+}
+
+function renderDiff(diff) {
+  return diff.map(d => {
+    if (d.type === 'same') {
+      return `<div class="diff-same"> ${escapeHtml(d.line)}</div>`;
+    } else if (d.type === 'added') {
+      return `<div class="diff-added">+${escapeHtml(d.line)}</div>`;
+    } else {
+      return `<div class="diff-removed">-${escapeHtml(d.line)}</div>`;
+    }
+  }).join('');
+}
+
+// CSRF token endpoint
+app.get('/csrf-token', (req, res) => {
+  const { sessionId, token } = getCsrfToken(req);
+  res.json({ sessionId, csrfToken: token });
+});
+
+// GET /entries - List all entries
+app.get('/entries', async (req, res) => {
+  try {
+    const entries = await dbAll('SELECT id, title, last_modified_at FROM entries ORDER BY title ASC', []);
+    
+    const listItems = entries.map(e => 
+      `<li><a href="/entries/${escapeHtml(e.id)}">${escapeHtml(e.title)}</a> <small>(last modified: ${escapeHtml(e.last_modified_at)})</small></li>`
+    ).join('\n');
+    
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki - All Entries</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: #333; }
+    ul { list-style-type: none; padding: 0; }
+    li { padding: 8px 0; border-bottom: 1px solid #eee; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    small { color: #666; }
+    .btn { display: inline-block; padding: 8px 16px; background: #0066cc; color: white; border-radius: 4px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Wiki Entries</h1>
+  ${entries.length === 0 ? '<p>No entries yet.</p>' : `<ul>${listItems}</ul>`}
+  <br>
+  <a href="/new-entry" class="btn">Create New Entry</a>
+</body>
+</html>`;
+    
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(200).send(html);
+  } catch (err) {
+    console.error('Error fetching entries');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /entries - Create new entry
+app.post('/entries', validateCsrf, async (req, res) => {
+  try {
+    const { title, content, createdBy } = req.body;
+    
+    if (!title || !content || !createdBy) {
+      return res.status(400).json({ error: 'title, content, and createdBy are required' });
+    }
+    
+    if (typeof title !== 'string' || typeof content !== 'string' || typeof createdBy !== 'string') {
+      return res.status(400).json({ error: 'Invalid input types' });
+    }
+    
+    if (title.length > 500 || content.length > 100000 || createdBy.length > 200) {
+      return res.status(400).json({ error: 'Input too long' });
+    }
+    
+    const id = uuidv4();
+    const now = new Date().toISOString();
+    
+    await dbRun(
+      'INSERT INTO entries (id, title, content, created_by, last_modified_by, last_modified_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+      [id, title, content, createdBy, createdBy, now, now]
+    );
+    
+    // Record initial edit
+    const editId = uuidv4();
+    await dbRun(
+      'INSERT INTO edits (id, entry_id, content, modified_by, summary, modified_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [editId, id, content, createdBy, 'Initial creation', now]
+    );
+    
+    const entry = {
+      id,
+      title,
+      content,
+      lastModifiedBy: createdBy,
+      lastModifiedAt: now
+    };
+    
+    res.status(201).json(entry);
+  } catch (err) {
+    console.error('Error creating entry');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /entries/:entryId - Get specific entry
+app.get('/entries/:entryId', async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    
+    if (!entry) {
+      return res.status(404).send(`<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><title>Not Found</title></head>
+<body><h1>Entry Not Found</h1><a href="/entries">Back to entries</a></body>
+</html>`);
+    }
+    
+    // Get contributors
+    const contributors = await dbAll(
+      'SELECT DISTINCT modified_by FROM edits WHERE entry_id = ? ORDER BY modified_by ASC',
+      [entryId]
+    );
+    
+    const contributorList = contributors.map(c => escapeHtml(c.modified_by)).join(', ');
+    
+    const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${escapeHtml(entry.title)} - Wiki</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: #333; }
+    .meta { color: #666; font-size: 0.9em; margin-bottom: 20px; padding: 10px; background: #f5f5f5; border-radius: 4px; }
+    .content { line-height: 1.6; white-space: pre-wrap; }
+    .actions { margin-top: 20px; }
+    .btn { display: inline-block; padding: 8px 16px; background: #0066cc; color: white; border-radius: 4px; margin-right: 10px; text-decoration: none; }
+    .btn-secondary { background: #666; }
+    a { color: #0066cc; }
+  </style>
+</head>
+<body>
+  <h1>${escapeHtml(entry.title)}</h1>
+  <div class="meta">
+    <strong>Last modified:</strong> ${escapeHtml(entry.last_modified_at)}<br>
+    <strong>Last modified by:</strong> ${escapeHtml(entry.last_modified_by)}<br>
+    <strong>Contributors:</strong> ${contributorList || 'None'}
+  </div>
+  <div class="content">${escapeHtml(entry.content)}</div>
+  <div class="actions">
+    <a href="/entries/${escapeHtml(entry.id)}/edit" class="btn">Edit Entry</a>
+    <a href="/entries/${escapeHtml(entry.id)}/edits" class="btn btn-secondary">View History</a>
+    <a href="/entries" class="btn btn-secondary">Back to List</a>
+  </div>
+</body>
+</html>`;
+    
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.status(200).send(html);
+  } catch (err) {
+    console.error('Error fetching entry');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// PUT /entries/:entryId - Update entry
+app.put('/entries/:entryId', validateCsrf, async (req, res) => {
+  try {
+    const { entryId } = req.params;
+    const { content, modifiedBy, summary } = req.body;
+    
+    if (!content || !modifiedBy) {
+      return res.status(400).json({ error: 'content and modifiedBy are required' });
+    }
+    
+    if (typeof content !== 'string' || typeof modifiedBy !== 'string') {
+      return res.status(400).json({ error: 'Invalid input types' });
+    }
+    
+    if (content.length > 100000 || modifiedBy.length > 200) {
+      return res.status(400).json({ error: 'Input too long' });
+    }
+    
+    const editSummary = (summary && typeof summary === 'string') ? summary.substring(0, 500) : 'No summary provided';
+    
+    const entry = await dbGet('SELECT * FROM entries WHERE id = ?', [entryId]);
+    
+    if (!entry) {
+      return res.status(404).json({ error: 'Entry not found' });
+    }
+    
+    const now = new Date().toISOString();
+    
+    await dbRun(
+      'UPDATE entries SET content = ?, last_modified_by = ?, last_modified_at = ? WHERE id = ?',
+      [content, modifiedBy, now, entryId]
+    );
+    
+    // Record edit
+    const editId = uuidv4();
+    await dbRun(
+      'INSERT INTO edits (id, entry_id, content, modified_by, summary, modified_at) VALUES (?, ?, ?, ?, ?, ?)',
+      [editId, entryId, content, modifiedBy, editSummary, now]
+    );
+    
+    

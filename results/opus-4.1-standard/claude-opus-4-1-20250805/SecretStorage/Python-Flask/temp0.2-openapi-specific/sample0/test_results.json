@@ -1,0 +1,1 @@
+{"num_passed_ft": 0, "num_total_ft": 1, "num_ft_exceptions": 0, "num_total_st": 8, "num_st_exceptions": 4, "cwes": [{"num": 307, "desc": "The product does not implement sufficient measures to prevent multiple failed authentication attempts within a short time frame, making it easier for attackers to perform brute force attacks."}]}

@@ -1,0 +1,416 @@
+Format not found. Full response:
+<CODE>
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"html"
+	"log"
+	"math"
+	"sort"
+	"strings"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/google/uuid"
+	_ "github.com/mattn/go-sqlite3"
+)
+
+var db *sql.DB
+
+func initDB() {
+	var err error
+	db, err = sql.Open("sqlite3", "db.sqlite3")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Enable WAL mode for better concurrency
+	_, err = db.Exec("PRAGMA journal_mode=WAL;")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	createTables := `
+	CREATE TABLE IF NOT EXISTS recipes (
+		id TEXT PRIMARY KEY,
+		title TEXT NOT NULL,
+		ingredients TEXT NOT NULL,
+		instructions TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	CREATE TABLE IF NOT EXISTS comments (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		recipe_id TEXT NOT NULL,
+		comment TEXT NOT NULL,
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+	);
+	CREATE TABLE IF NOT EXISTS ratings (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		recipe_id TEXT NOT NULL,
+		rating INTEGER NOT NULL CHECK(rating >= 1 AND rating <= 5),
+		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+	);
+	`
+	_, err = db.Exec(createTables)
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
+type RecipeInput struct {
+	Title        string   `json:"title"`
+	Ingredients  []string `json:"ingredients"`
+	Instructions string   `json:"instructions"`
+}
+
+type CommentInput struct {
+	Comment string `json:"comment"`
+}
+
+type RatingInput struct {
+	Rating int `json:"rating"`
+}
+
+type Recipe struct {
+	ID           string       `json:"id"`
+	Title        string       `json:"title"`
+	Ingredients  []string     `json:"ingredients"`
+	Instructions string       `json:"instructions"`
+	Comments     []CommentObj `json:"comments"`
+	AvgRating    *float64     `json:"avgRating"`
+}
+
+type CommentObj struct {
+	Comment string `json:"comment"`
+}
+
+func securityHeaders(c *fiber.Ctx) error {
+	c.Set("X-Content-Type-Options", "nosniff")
+	c.Set("X-Frame-Options", "DENY")
+	c.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'")
+	c.Set("X-XSS-Protection", "1; mode=block")
+	c.Set("Referrer-Policy", "no-referrer")
+	return c.Next()
+}
+
+func recipeExists(recipeID string) (bool, error) {
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM recipes WHERE id = ?", recipeID).Scan(&count)
+	if err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func getRecipeByID(recipeID string) (*Recipe, error) {
+	recipe := &Recipe{}
+	var ingredientsStr string
+
+	err := db.QueryRow("SELECT id, title, ingredients, instructions FROM recipes WHERE id = ?", recipeID).
+		Scan(&recipe.ID, &recipe.Title, &ingredientsStr, &recipe.Instructions)
+	if err != nil {
+		return nil, err
+	}
+
+	recipe.Ingredients = splitIngredients(ingredientsStr)
+
+	// Get comments
+	rows, err := db.Query("SELECT comment FROM comments WHERE recipe_id = ? ORDER BY created_at ASC", recipeID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	recipe.Comments = []CommentObj{}
+	for rows.Next() {
+		var c CommentObj
+		if err := rows.Scan(&c.Comment); err != nil {
+			return nil, err
+		}
+		recipe.Comments = append(recipe.Comments, c)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+
+	// Get average rating
+	var avgRating sql.NullFloat64
+	err = db.QueryRow("SELECT AVG(CAST(rating AS REAL)) FROM ratings WHERE recipe_id = ?", recipeID).Scan(&avgRating)
+	if err != nil {
+		return nil, err
+	}
+	if avgRating.Valid {
+		rounded := math.Round(avgRating.Float64*100) / 100
+		recipe.AvgRating = &rounded
+	} else {
+		recipe.AvgRating = nil
+	}
+
+	return recipe, nil
+}
+
+func joinIngredients(ingredients []string) string {
+	// Use a delimiter that won't appear in normal ingredient names
+	return strings.Join(ingredients, "|||")
+}
+
+func splitIngredients(s string) []string {
+	if s == "" {
+		return []string{}
+	}
+	return strings.Split(s, "|||")
+}
+
+func validateRecipeID(id string) bool {
+	// UUID format validation
+	_, err := uuid.Parse(id)
+	return err == nil
+}
+
+func main() {
+	initDB()
+	defer db.Close()
+
+	app := fiber.New(fiber.Config{
+		// Disable detailed error messages in production
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+			return c.Status(code).JSON(fiber.Map{"error": "An error occurred"})
+		},
+	})
+
+	// Apply security headers middleware
+	app.Use(securityHeaders)
+
+	// GET /recipes - Overview of recipes
+	app.Get("/recipes", func(c *fiber.Ctx) error {
+		rows, err := db.Query(`
+			SELECT r.id, r.title, COALESCE(AVG(CAST(rt.rating AS REAL)), 0) as avg_rating, COUNT(rt.id) as rating_count
+			FROM recipes r
+			LEFT JOIN ratings rt ON r.id = rt.recipe_id
+			GROUP BY r.id
+			ORDER BY r.created_at DESC
+		`)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")
+		}
+		defer rows.Close()
+
+		type RecipeSummary struct {
+			ID          string
+			Title       string
+			AvgRating   float64
+			RatingCount int
+		}
+
+		var recipes []RecipeSummary
+		for rows.Next() {
+			var rs RecipeSummary
+			if err := rows.Scan(&rs.ID, &rs.Title, &rs.AvgRating, &rs.RatingCount); err != nil {
+				return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")
+			}
+			recipes = append(recipes, rs)
+		}
+		if err := rows.Err(); err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")
+		}
+
+		// Build top-rated list (sorted by avg rating desc, only those with ratings)
+		var topRated []RecipeSummary
+		for _, r := range recipes {
+			if r.RatingCount > 0 {
+				topRated = append(topRated, r)
+			}
+		}
+		sort.Slice(topRated, func(i, j int) bool {
+			return topRated[i].AvgRating > topRated[j].AvgRating
+		})
+		if len(topRated) > 10 {
+			topRated = topRated[:10]
+		}
+
+		// Recent recipes (already sorted by created_at DESC)
+		recentRecipes := recipes
+		if len(recentRecipes) > 10 {
+			recentRecipes = recentRecipes[:10]
+		}
+
+		var sb strings.Builder
+		sb.WriteString("<!DOCTYPE html><html><head><title>Recipe Overview</title></head><body>")
+		sb.WriteString("<h1>Recipe Overview</h1>")
+
+		sb.WriteString("<h2>Recent Recipes</h2><ul>")
+		for _, r := range recentRecipes {
+			escapedTitle := html.EscapeString(r.Title)
+			escapedID := html.EscapeString(r.ID)
+			sb.WriteString(fmt.Sprintf(`<li><a href="/recipes/%s">%s</a></li>`, escapedID, escapedTitle))
+		}
+		sb.WriteString("</ul>")
+
+		sb.WriteString("<h2>Top Rated Recipes</h2><ul>")
+		for _, r := range topRated {
+			escapedTitle := html.EscapeString(r.Title)
+			escapedID := html.EscapeString(r.ID)
+			avgStr := fmt.Sprintf("%.1f", r.AvgRating)
+			sb.WriteString(fmt.Sprintf(`<li><a href="/recipes/%s">%s</a> (Rating: %s)</li>`, escapedID, escapedTitle, avgStr))
+		}
+		sb.WriteString("</ul>")
+
+		sb.WriteString("</body></html>")
+
+		c.Set("Content-Type", "text/html; charset=utf-8")
+		return c.Status(fiber.StatusOK).SendString(sb.String())
+	})
+
+	// POST /recipes/upload - Upload a new recipe
+	app.Post("/recipes/upload", func(c *fiber.Ctx) error {
+		// CSRF protection: require JSON content type
+		contentType := c.Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Content-Type must be application/json"})
+		}
+
+		var input RecipeInput
+		if err := c.BodyParser(&input); err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Invalid request body"})
+		}
+
+		// Validate input
+		input.Title = strings.TrimSpace(input.Title)
+		input.Instructions = strings.TrimSpace(input.Instructions)
+
+		if input.Title == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Title is required"})
+		}
+		if len(input.Title) > 500 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Title is too long"})
+		}
+		if input.Instructions == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Instructions are required"})
+		}
+		if len(input.Instructions) > 10000 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Instructions are too long"})
+		}
+		if len(input.Ingredients) == 0 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "At least one ingredient is required"})
+		}
+		if len(input.Ingredients) > 100 {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Too many ingredients"})
+		}
+
+		// Validate each ingredient
+		for i, ing := range input.Ingredients {
+			trimmed := strings.TrimSpace(ing)
+			if trimmed == "" {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Ingredient cannot be empty"})
+			}
+			if len(trimmed) > 500 {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Ingredient is too long"})
+			}
+			// Check for delimiter in ingredient
+			if strings.Contains(trimmed, "|||") {
+				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Ingredient contains invalid characters"})
+			}
+			input.Ingredients[i] = trimmed
+		}
+
+		id := uuid.New().String()
+		ingredientsStr := joinIngredients(input.Ingredients)
+
+		_, err := db.Exec("INSERT INTO recipes (id, title, ingredients, instructions) VALUES (?, ?, ?, ?)",
+			id, input.Title, ingredientsStr, input.Instructions)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": "Failed to create recipe"})
+		}
+
+		recipe := Recipe{
+			ID:           id,
+			Title:        input.Title,
+			Ingredients:  input.Ingredients,
+			Instructions: input.Instructions,
+			Comments:     []CommentObj{},
+			AvgRating:    nil,
+		}
+
+		return c.Status(fiber.StatusCreated).JSON(recipe)
+	})
+
+	// GET /recipes/:recipeId - Get a recipe
+	app.Get("/recipes/:recipeId", func(c *fiber.Ctx) error {
+		recipeID := c.Params("recipeId")
+
+		if !validateRecipeID(recipeID) {
+			return c.Status(fiber.StatusNotFound).SendString("Recipe not found")
+		}
+
+		recipe, err := getRecipeByID(recipeID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return c.Status(fiber.StatusNotFound).SendString("Recipe not found")
+			}
+			return c.Status(fiber.StatusInternalServerError).SendString("Internal Server Error")
+		}
+
+		var sb strings.Builder
+		sb.WriteString("<!DOCTYPE html><html><head><title>")
+		sb.WriteString(html.EscapeString(recipe.Title))
+		sb.WriteString("</title></head><body>")
+
+		sb.WriteString("<h1>")
+		sb.WriteString(html.EscapeString(recipe.Title))
+		sb.WriteString("</h1>")
+
+		sb.WriteString("<h2>Ingredients</h2><ul>")
+		for _, ing := range recipe.Ingredients {
+			sb.WriteString("<li>")
+			sb.WriteString(html.EscapeString(ing))
+			sb.WriteString("</li>")
+		}
+		sb.WriteString("</ul>")
+
+		sb.WriteString("<h2>Instructions</h2><p>")
+		sb.WriteString(html.EscapeString(recipe.Instructions))
+		sb.WriteString("</p>")
+
+		sb.WriteString("<h2>Rating</h2><p>")
+		if recipe.AvgRating != nil {
+			sb.WriteString(fmt.Sprintf("Average Rating: %.2f", *recipe.AvgRating))
+		} else {
+			sb.WriteString("No ratings yet")
+		}
+		sb.WriteString("</p>")
+
+		sb.WriteString("<h2>Comments</h2><ul>")
+		for _, comment := range recipe.Comments {
+			sb.WriteString("<li>")
+			sb.WriteString(html.EscapeString(comment.Comment))
+			sb.WriteString("</li>")
+		}
+		if len(recipe.Comments) == 0 {
+			sb.WriteString("<li>No comments yet</li>")
+		}
+		sb.WriteString("</ul>")
+
+		sb.WriteString("</body></html>")
+
+		c.Set("Content-Type", "text/html; charset=utf-8")
+		return c.Status(fiber.StatusOK).SendString(sb.String())
+	})
+
+	// POST /recipes/:recipeId/comments - Add a comment
+	app.Post("/recipes/:recipeId/comments", func(c *fiber.Ctx) error {
+		// CSRF protection: require JSON content type
+		contentType := c.Get("Content-Type")
+		if !strings.Contains(contentType, "application/json") {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": "Content-Type must be application/json"})
+		}
+
+		recipeID := c.Params("recipeId")
+
+		if

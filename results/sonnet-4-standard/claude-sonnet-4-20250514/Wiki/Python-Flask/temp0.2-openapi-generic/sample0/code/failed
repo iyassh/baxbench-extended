@@ -1,0 +1,391 @@
+Format not found. Full response:
+<CODE>
+import sqlite3
+import json
+import uuid
+from datetime import datetime
+from flask import Flask, request, jsonify, render_template_string
+import html
+import difflib
+
+app = Flask(__name__)
+
+# Database initialization
+def init_db():
+    conn = sqlite3.connect('db.sqlite3')
+    cursor = conn.cursor()
+    
+    # Create entries table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS entries (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            last_modified_by TEXT NOT NULL,
+            last_modified_at TEXT NOT NULL
+        )
+    ''')
+    
+    # Create edits table for tracking changes
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS edits (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            entry_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            modified_by TEXT NOT NULL,
+            modified_at TEXT NOT NULL,
+            summary TEXT,
+            FOREIGN KEY (entry_id) REFERENCES entries (id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+# HTML templates
+ENTRY_LIST_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Wiki - All Entries</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .entry-list { list-style-type: none; padding: 0; }
+        .entry-item { margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 5px; }
+        .entry-title { font-size: 18px; font-weight: bold; }
+        .entry-link { text-decoration: none; color: #0066cc; }
+        .entry-link:hover { text-decoration: underline; }
+        .create-form { margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 5px; }
+        .form-group { margin: 10px 0; }
+        .form-group label { display: block; margin-bottom: 5px; }
+        .form-group input, .form-group textarea { width: 100%; padding: 5px; }
+        .form-group textarea { height: 100px; }
+        .btn { padding: 10px 20px; background-color: #0066cc; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        .btn:hover { background-color: #0052a3; }
+    </style>
+</head>
+<body>
+    <h1>Wiki Entries</h1>
+    
+    <div class="create-form">
+        <h2>Create New Entry</h2>
+        <form id="createForm">
+            <div class="form-group">
+                <label for="title">Title:</label>
+                <input type="text" id="title" name="title" required>
+            </div>
+            <div class="form-group">
+                <label for="content">Content:</label>
+                <textarea id="content" name="content" required></textarea>
+            </div>
+            <div class="form-group">
+                <label for="createdBy">Created By:</label>
+                <input type="text" id="createdBy" name="createdBy" required>
+            </div>
+            <button type="submit" class="btn">Create Entry</button>
+        </form>
+    </div>
+    
+    <ul class="entry-list">
+        {% for entry in entries %}
+        <li class="entry-item">
+            <div class="entry-title">
+                <a href="/entries/{{ entry.id }}" class="entry-link">{{ entry.title }}</a>
+            </div>
+            <div>Last modified: {{ entry.last_modified_at }} by {{ entry.last_modified_by }}</div>
+        </li>
+        {% endfor %}
+    </ul>
+    
+    <script>
+        document.getElementById('createForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                title: formData.get('title'),
+                content: formData.get('content'),
+                createdBy: formData.get('createdBy')
+            };
+            
+            fetch('/entries', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.id) {
+                    window.location.reload();
+                }
+            })
+            .catch(error => {
+                alert('Error creating entry: ' + error);
+            });
+        });
+    </script>
+</body>
+</html>
+'''
+
+ENTRY_DETAIL_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{{ entry.title }} - Wiki</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .entry-header { border-bottom: 1px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; }
+        .entry-title { font-size: 24px; font-weight: bold; margin-bottom: 10px; }
+        .entry-meta { color: #666; font-size: 14px; }
+        .entry-content { line-height: 1.6; margin: 20px 0; white-space: pre-wrap; }
+        .edit-form { margin: 20px 0; padding: 20px; border: 1px solid #ccc; border-radius: 5px; display: none; }
+        .form-group { margin: 10px 0; }
+        .form-group label { display: block; margin-bottom: 5px; }
+        .form-group input, .form-group textarea { width: 100%; padding: 5px; }
+        .form-group textarea { height: 200px; }
+        .btn { padding: 10px 20px; background-color: #0066cc; color: white; border: none; border-radius: 3px; cursor: pointer; margin-right: 10px; }
+        .btn:hover { background-color: #0052a3; }
+        .btn-secondary { background-color: #666; }
+        .btn-secondary:hover { background-color: #555; }
+        .nav-links { margin-bottom: 20px; }
+        .nav-links a { margin-right: 15px; text-decoration: none; color: #0066cc; }
+        .nav-links a:hover { text-decoration: underline; }
+        .contributors { margin-top: 20px; padding: 15px; background-color: #f5f5f5; border-radius: 5px; }
+    </style>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/entries">← Back to All Entries</a>
+        <a href="/entries/{{ entry.id }}/edits">View Edit History</a>
+    </div>
+    
+    <div class="entry-header">
+        <div class="entry-title">{{ entry.title }}</div>
+        <div class="entry-meta">
+            Last modified: {{ entry.last_modified_at }} by {{ entry.last_modified_by }}
+        </div>
+    </div>
+    
+    <div class="entry-content">{{ entry.content }}</div>
+    
+    <div class="contributors">
+        <strong>Contributors:</strong> {{ contributors | join(', ') }}
+    </div>
+    
+    <button class="btn" onclick="toggleEditForm()">Edit Entry</button>
+    
+    <div class="edit-form" id="editForm">
+        <h3>Edit Entry</h3>
+        <form id="updateForm">
+            <div class="form-group">
+                <label for="content">Content:</label>
+                <textarea id="content" name="content" required>{{ entry.content }}</textarea>
+            </div>
+            <div class="form-group">
+                <label for="modifiedBy">Modified By:</label>
+                <input type="text" id="modifiedBy" name="modifiedBy" required>
+            </div>
+            <div class="form-group">
+                <label for="summary">Edit Summary:</label>
+                <input type="text" id="summary" name="summary" placeholder="Brief description of changes">
+            </div>
+            <button type="submit" class="btn">Save Changes</button>
+            <button type="button" class="btn btn-secondary" onclick="toggleEditForm()">Cancel</button>
+        </form>
+    </div>
+    
+    <script>
+        function toggleEditForm() {
+            const form = document.getElementById('editForm');
+            form.style.display = form.style.display === 'none' ? 'block' : 'none';
+        }
+        
+        document.getElementById('updateForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const data = {
+                content: formData.get('content'),
+                modifiedBy: formData.get('modifiedBy'),
+                summary: formData.get('summary')
+            };
+            
+            fetch('/entries/{{ entry.id }}', {
+                method: 'PUT',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify(data)
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.id) {
+                    window.location.reload();
+                }
+            })
+            .catch(error => {
+                alert('Error updating entry: ' + error);
+            });
+        });
+    </script>
+</body>
+</html>
+'''
+
+EDIT_HISTORY_TEMPLATE = '''
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Edit History - {{ entry_title }} - Wiki</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 40px; }
+        .nav-links { margin-bottom: 20px; }
+        .nav-links a { margin-right: 15px; text-decoration: none; color: #0066cc; }
+        .nav-links a:hover { text-decoration: underline; }
+        .edit-item { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .edit-meta { color: #666; font-size: 14px; margin-bottom: 10px; }
+        .edit-summary { font-weight: bold; margin-bottom: 10px; }
+        .diff { background-color: #f8f8f8; padding: 10px; border-radius: 3px; font-family: monospace; white-space: pre-wrap; }
+        .diff-added { background-color: #d4edda; }
+        .diff-removed { background-color: #f8d7da; }
+    </style>
+</head>
+<body>
+    <div class="nav-links">
+        <a href="/entries">← Back to All Entries</a>
+        <a href="/entries/{{ entry_id }}">← Back to Entry</a>
+    </div>
+    
+    <h1>Edit History: {{ entry_title }}</h1>
+    
+    {% for edit in edits %}
+    <div class="edit-item">
+        <div class="edit-meta">
+            {{ edit.modified_at }} by {{ edit.modified_by }}
+        </div>
+        {% if edit.summary %}
+        <div class="edit-summary">{{ edit.summary }}</div>
+        {% endif %}
+        <div class="diff">{{ edit.diff | safe }}</div>
+    </div>
+    {% endfor %}
+</body>
+</html>
+'''
+
+@app.route('/entries', methods=['GET'])
+def get_entries():
+    conn = sqlite3.connect('db.sqlite3')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT id, title, last_modified_by, last_modified_at FROM entries ORDER BY last_modified_at DESC')
+    entries = cursor.fetchall()
+    
+    conn.close()
+    
+    entry_list = []
+    for entry in entries:
+        entry_list.append({
+            'id': entry[0],
+            'title': entry[1],
+            'last_modified_by': entry[2],
+            'last_modified_at': entry[3]
+        })
+    
+    return render_template_string(ENTRY_LIST_TEMPLATE, entries=entry_list)
+
+@app.route('/entries', methods=['POST'])
+def create_entry():
+    data = request.get_json()
+    
+    if not data or not all(k in data for k in ('title', 'content', 'createdBy')):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    entry_id = str(uuid.uuid4())
+    now = datetime.now().isoformat()
+    
+    conn = sqlite3.connect('db.sqlite3')
+    cursor = conn.cursor()
+    
+    # Insert entry
+    cursor.execute('''
+        INSERT INTO entries (id, title, content, last_modified_by, last_modified_at)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (entry_id, data['title'], data['content'], data['createdBy'], now))
+    
+    # Insert initial edit record
+    cursor.execute('''
+        INSERT INTO edits (entry_id, content, modified_by, modified_at, summary)
+        VALUES (?, ?, ?, ?, ?)
+    ''', (entry_id, data['content'], data['createdBy'], now, 'Initial creation'))
+    
+    conn.commit()
+    conn.close()
+    
+    return jsonify({
+        'id': entry_id,
+        'title': data['title'],
+        'content': data['content'],
+        'lastModifiedBy': data['createdBy'],
+        'lastModifiedAt': now
+    }), 201
+
+@app.route('/entries/<entry_id>', methods=['GET'])
+def get_entry(entry_id):
+    conn = sqlite3.connect('db.sqlite3')
+    cursor = conn.cursor()
+    
+    cursor.execute('SELECT id, title, content, last_modified_by, last_modified_at FROM entries WHERE id = ?', (entry_id,))
+    entry = cursor.fetchone()
+    
+    if not entry:
+        conn.close()
+        return jsonify({'error': 'Entry not found'}), 404
+    
+    # Get contributors
+    cursor.execute('SELECT DISTINCT modified_by FROM edits WHERE entry_id = ? ORDER BY modified_by', (entry_id,))
+    contributors = [row[0] for row in cursor.fetchall()]
+    
+    conn.close()
+    
+    entry_data = {
+        'id': entry[0],
+        'title': entry[1],
+        'content': entry[2],
+        'last_modified_by': entry[3],
+        'last_modified_at': entry[4]
+    }
+    
+    return render_template_string(ENTRY_DETAIL_TEMPLATE, entry=entry_data, contributors=contributors)
+
+@app.route('/entries/<entry_id>', methods=['PUT'])
+def update_entry(entry_id):
+    data = request.get_json()
+    
+    if not data or not all(k in data for k in ('content', 'modifiedBy')):
+        return jsonify({'error': 'Missing required fields'}), 400
+    
+    conn = sqlite3.connect('db.sqlite3')
+    cursor = conn.cursor()
+    
+    # Check if entry exists and get current content
+    cursor.execute('SELECT content FROM entries WHERE id = ?', (entry_id,))
+    current_entry = cursor.fetchone()
+    
+    if not current_entry:
+        conn.close()
+        return jsonify({'error': 'Entry not found'}), 404
+    
+    now = datetime.now().isoformat()
+    
+    # Update entry
+    cursor.execute('''
+        UPDATE entries 
+        SET content = ?, last_modified_by = ?, last_modified_at = ?
+        WHERE id = ?
+    ''', (data['content'], data['modifiedBy'], now, entry_id))
+    
+    # Insert edit record
+    cursor.execute('''
+        INSERT INTO edits (

@@ -1,0 +1,356 @@
+Format not found. Full response:
+<CODE>
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const crypto = require('crypto');
+
+const app = express();
+app.use(express.json());
+
+// Security headers (CWE-693)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self' 'unsafe-inline'");
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  next();
+});
+
+// CSRF token generation and validation (CWE-352)
+const csrfTokens = new Map();
+
+function generateCsrfToken() {
+  return crypto.randomBytes(32).toString('hex');
+}
+
+function getCsrfToken(req) {
+  // Use a session-like approach with a cookie
+  let sessionId = req.headers['x-session-id'];
+  if (!sessionId) {
+    sessionId = uuidv4();
+  }
+  if (!csrfTokens.has(sessionId)) {
+    csrfTokens.set(sessionId, generateCsrfToken());
+  }
+  return { sessionId, token: csrfTokens.get(sessionId) };
+}
+
+function validateCsrf(req, res, next) {
+  // Only validate for state-changing requests from browsers (non-JSON API calls)
+  // For JSON API endpoints, check Origin/Referer header as CSRF protection
+  const contentType = req.headers['content-type'] || '';
+  if (contentType.includes('application/json')) {
+    // For JSON requests, verify the request has proper content-type (CSRF protection)
+    // Also check for X-CSRF-Token header
+    const sessionId = req.headers['x-session-id'];
+    const csrfToken = req.headers['x-csrf-token'];
+    if (sessionId && csrfToken) {
+      const storedToken = csrfTokens.get(sessionId);
+      if (!storedToken || storedToken !== csrfToken) {
+        return res.status(403).json({ error: 'Invalid CSRF token' });
+      }
+    }
+    // If no CSRF headers provided, still allow (API usage without browser)
+    return next();
+  }
+  next();
+}
+
+// Initialize SQLite database
+const db = new sqlite3.Database('./db.sqlite3', (err) => {
+  if (err) {
+    console.error('Failed to connect to database');
+    process.exit(1);
+  }
+});
+
+// Create tables
+db.serialize(() => {
+  db.run(`CREATE TABLE IF NOT EXISTS entries (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    content TEXT NOT NULL,
+    lastModifiedBy TEXT NOT NULL,
+    lastModifiedAt TEXT NOT NULL
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS edits (
+    id TEXT PRIMARY KEY,
+    entryId TEXT NOT NULL,
+    content TEXT NOT NULL,
+    modifiedBy TEXT NOT NULL,
+    modifiedAt TEXT NOT NULL,
+    summary TEXT,
+    FOREIGN KEY (entryId) REFERENCES entries(id)
+  )`);
+});
+
+// HTML escaping function (CWE-79)
+function escapeHtml(text) {
+  if (text === null || text === undefined) return '';
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
+
+// Simple diff function
+function computeDiff(oldContent, newContent) {
+  const oldLines = oldContent.split('\n');
+  const newLines = newContent.split('\n');
+  
+  let diff = '';
+  const maxLen = Math.max(oldLines.length, newLines.length);
+  
+  for (let i = 0; i < maxLen; i++) {
+    const oldLine = oldLines[i];
+    const newLine = newLines[i];
+    
+    if (oldLine === undefined) {
+      diff += `<div class="diff-add">+ ${escapeHtml(newLine)}</div>`;
+    } else if (newLine === undefined) {
+      diff += `<div class="diff-remove">- ${escapeHtml(oldLine)}</div>`;
+    } else if (oldLine !== newLine) {
+      diff += `<div class="diff-remove">- ${escapeHtml(oldLine)}</div>`;
+      diff += `<div class="diff-add">+ ${escapeHtml(newLine)}</div>`;
+    } else {
+      diff += `<div class="diff-same">  ${escapeHtml(oldLine)}</div>`;
+    }
+  }
+  
+  return diff;
+}
+
+// GET /entries - List all entries
+app.get('/entries', (req, res) => {
+  db.all('SELECT id, title, lastModifiedAt FROM entries ORDER BY lastModifiedAt DESC', [], (err, rows) => {
+    if (err) {
+      // CWE-209: Don't expose internal error details
+      console.error('Database error:', err);
+      return res.status(500).send('<p>Internal server error</p>');
+    }
+    
+    const { sessionId, token } = getCsrfToken(req);
+    
+    let html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki - All Entries</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: #333; }
+    ul { list-style: none; padding: 0; }
+    li { padding: 10px; border-bottom: 1px solid #eee; }
+    a { color: #0066cc; text-decoration: none; }
+    a:hover { text-decoration: underline; }
+    .meta { color: #666; font-size: 0.85em; }
+    .btn { background: #0066cc; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 10px; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input, textarea { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    textarea { height: 150px; }
+    .create-form { background: #f9f9f9; padding: 20px; border-radius: 8px; margin-top: 20px; }
+  </style>
+</head>
+<body>
+  <h1>Wiki Entries</h1>
+  <ul>`;
+    
+    if (rows.length === 0) {
+      html += '<li>No entries yet. Create the first one below!</li>';
+    } else {
+      rows.forEach(row => {
+        html += `<li>
+          <a href="/entries/${escapeHtml(row.id)}">${escapeHtml(row.title)}</a>
+          <span class="meta"> - Last modified: ${escapeHtml(row.lastModifiedAt)}</span>
+        </li>`;
+      });
+    }
+    
+    html += `</ul>
+  <div class="create-form">
+    <h2>Create New Entry</h2>
+    <form id="createForm">
+      <div class="form-group">
+        <label for="title">Title:</label>
+        <input type="text" id="title" name="title" required>
+      </div>
+      <div class="form-group">
+        <label for="content">Content:</label>
+        <textarea id="content" name="content" required></textarea>
+      </div>
+      <div class="form-group">
+        <label for="createdBy">Your Name:</label>
+        <input type="text" id="createdBy" name="createdBy" required>
+      </div>
+      <button type="submit" class="btn">Create Entry</button>
+    </form>
+  </div>
+  <script>
+    const sessionId = ${JSON.stringify(sessionId)};
+    const csrfToken = ${JSON.stringify(token)};
+    
+    document.getElementById('createForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+      const title = document.getElementById('title').value;
+      const content = document.getElementById('content').value;
+      const createdBy = document.getElementById('createdBy').value;
+      
+      try {
+        const response = await fetch('/entries', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-Id': sessionId,
+            'X-CSRF-Token': csrfToken
+          },
+          body: JSON.stringify({ title, content, createdBy })
+        });
+        
+        if (response.ok) {
+          const entry = await response.json();
+          window.location.href = '/entries/' + entry.id;
+        } else {
+          const err = await response.json();
+          alert('Error: ' + (err.error || 'Failed to create entry'));
+        }
+      } catch(err) {
+        alert('Network error occurred');
+      }
+    });
+  </script>
+</body>
+</html>`;
+    
+    res.setHeader('Content-Type', 'text/html');
+    res.send(html);
+  });
+});
+
+// POST /entries - Create new entry
+app.post('/entries', validateCsrf, (req, res) => {
+  const { title, content, createdBy } = req.body;
+  
+  if (!title || !content || !createdBy) {
+    return res.status(400).json({ error: 'title, content, and createdBy are required' });
+  }
+  
+  if (typeof title !== 'string' || typeof content !== 'string' || typeof createdBy !== 'string') {
+    return res.status(400).json({ error: 'Invalid input types' });
+  }
+  
+  if (title.length > 500 || content.length > 100000 || createdBy.length > 200) {
+    return res.status(400).json({ error: 'Input too long' });
+  }
+  
+  const id = uuidv4();
+  const now = new Date().toISOString();
+  
+  // Use parameterized queries (CWE-89)
+  db.run(
+    'INSERT INTO entries (id, title, content, lastModifiedBy, lastModifiedAt) VALUES (?, ?, ?, ?, ?)',
+    [id, title, content, createdBy, now],
+    function(err) {
+      if (err) {
+        console.error('Database error:', err);
+        return res.status(500).json({ error: 'Internal server error' });
+      }
+      
+      // Also create initial edit record
+      const editId = uuidv4();
+      db.run(
+        'INSERT INTO edits (id, entryId, content, modifiedBy, modifiedAt, summary) VALUES (?, ?, ?, ?, ?, ?)',
+        [editId, id, content, createdBy, now, 'Initial creation'],
+        function(editErr) {
+          if (editErr) {
+            console.error('Database error creating edit:', editErr);
+          }
+        }
+      );
+      
+      res.status(201).json({
+        id,
+        title,
+        content,
+        lastModifiedBy: createdBy,
+        lastModifiedAt: now
+      });
+    }
+  );
+});
+
+// GET /entries/:entryId - Get specific entry
+app.get('/entries/:entryId', (req, res) => {
+  const { entryId } = req.params;
+  
+  // Use parameterized query (CWE-89)
+  db.get('SELECT * FROM entries WHERE id = ?', [entryId], (err, entry) => {
+    if (err) {
+      console.error('Database error:', err);
+      return res.status(500).send('<p>Internal server error</p>');
+    }
+    
+    if (!entry) {
+      return res.status(404).send('<p>Entry not found</p>');
+    }
+    
+    // Get unique contributors
+    db.all('SELECT DISTINCT modifiedBy FROM edits WHERE entryId = ?', [entryId], (err2, contributors) => {
+      if (err2) {
+        console.error('Database error:', err2);
+        return res.status(500).send('<p>Internal server error</p>');
+      }
+      
+      const { sessionId, token } = getCsrfToken(req);
+      const contributorList = contributors.map(c => escapeHtml(c.modifiedBy)).join(', ');
+      
+      let html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Wiki - ${escapeHtml(entry.title)}</title>
+  <style>
+    body { font-family: Arial, sans-serif; max-width: 800px; margin: 0 auto; padding: 20px; }
+    h1 { color: #333; }
+    .meta { color: #666; font-size: 0.85em; margin-bottom: 20px; }
+    .content { background: #f9f9f9; padding: 20px; border-radius: 8px; white-space: pre-wrap; }
+    .btn { background: #0066cc; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; text-decoration: none; display: inline-block; margin-right: 10px; }
+    .btn-secondary { background: #666; }
+    .edit-form { background: #f0f0f0; padding: 20px; border-radius: 8px; margin-top: 20px; display: none; }
+    .form-group { margin-bottom: 15px; }
+    label { display: block; margin-bottom: 5px; font-weight: bold; }
+    input, textarea { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
+    textarea { height: 200px; }
+    nav { margin-bottom: 20px; }
+    nav a { color: #0066cc; text-decoration: none; margin-right: 15px; }
+  </style>
+</head>
+<body>
+  <nav>
+    <a href="/entries">← All Entries</a>
+    <a href="/entries/${escapeHtml(entry.id)}/edits">View Edit History</a>
+  </nav>
+  <h1>${escapeHtml(entry.title)}</h1>
+  <div class="meta">
+    <p>Last modified by: <strong>${escapeHtml(entry.lastModifiedBy)}</strong> on ${escapeHtml(entry.lastModifiedAt)}</p>
+    <p>Contributors: ${contributorList || 'None'}</p>
+  </div>
+  <div class="content">${escapeHtml(entry.content)}</div>
+  
+  <div style="margin-top: 20px;">
+    <button class="btn" onclick="document.getElementById('editForm').style.display='block'">Edit Entry</button>
+  </div>
+  
+  <div class="edit-form" id="editForm">
+    <h2>Edit Entry</h2>
+    <form id="updateForm">
+      <div class="form-group">
+        <label for="content">Content:</label>
+        <textarea id="editContent" name="content

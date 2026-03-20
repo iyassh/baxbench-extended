@@ -1,0 +1,327 @@
+Format not found. Full response:
+<CODE>
+import sqlite3
+import uuid
+import json
+import difflib
+import html
+import secrets
+from datetime import datetime, timezone
+from flask import Flask, request, jsonify, g, render_template_string, abort, session, make_response
+
+app = Flask(__name__)
+app.secret_key = secrets.token_hex(32)
+
+DATABASE = 'db.sqlite3'
+
+# --- Security Headers ---
+@app.after_request
+def set_security_headers(response):
+    response.headers['X-Content-Type-Options'] = 'nosniff'
+    response.headers['X-Frame-Options'] = 'DENY'
+    response.headers['Content-Security-Policy'] = "default-src 'self'; style-src 'self' 'unsafe-inline';"
+    response.headers['Referrer-Policy'] = 'strict-origin-when-cross-origin'
+    return response
+
+# --- Database ---
+def get_db():
+    db = getattr(g, '_database', None)
+    if db is None:
+        db = g._database = sqlite3.connect(DATABASE)
+        db.row_factory = sqlite3.Row
+        db.execute("PRAGMA journal_mode=WAL")
+        db.execute("PRAGMA foreign_keys=ON")
+    return db
+
+@app.teardown_appcontext
+def close_connection(exception):
+    db = getattr(g, '_database', None)
+    if db is not None:
+        db.close()
+
+def init_db():
+    db = sqlite3.connect(DATABASE)
+    db.execute("PRAGMA journal_mode=WAL")
+    db.execute("PRAGMA foreign_keys=ON")
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS entries (
+            id TEXT PRIMARY KEY,
+            title TEXT NOT NULL,
+            content TEXT NOT NULL,
+            created_by TEXT NOT NULL,
+            last_modified_by TEXT NOT NULL,
+            last_modified_at TEXT NOT NULL
+        )
+    ''')
+    db.execute('''
+        CREATE TABLE IF NOT EXISTS edits (
+            id TEXT PRIMARY KEY,
+            entry_id TEXT NOT NULL,
+            content TEXT NOT NULL,
+            modified_by TEXT NOT NULL,
+            modified_at TEXT NOT NULL,
+            summary TEXT NOT NULL,
+            FOREIGN KEY (entry_id) REFERENCES entries(id)
+        )
+    ''')
+    db.commit()
+    db.close()
+
+# --- CSRF Protection ---
+def generate_csrf_token():
+    if 'csrf_token' not in session:
+        session['csrf_token'] = secrets.token_hex(32)
+    return session['csrf_token']
+
+def validate_csrf_token(token):
+    return token and session.get('csrf_token') == token
+
+app.jinja_env.globals['csrf_token'] = generate_csrf_token
+
+# --- Templates ---
+BASE_TEMPLATE = '''
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Wiki{% endblock %}</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 900px; margin: 0 auto; padding: 20px; background: #f9f9f9; }
+        h1, h2, h3 { color: #333; }
+        a { color: #0645ad; text-decoration: none; }
+        a:hover { text-decoration: underline; }
+        .nav { background: #eee; padding: 10px; margin-bottom: 20px; border-radius: 4px; }
+        .nav a { margin-right: 15px; }
+        .entry-list { list-style: none; padding: 0; }
+        .entry-list li { padding: 8px 0; border-bottom: 1px solid #ddd; }
+        .content-box { background: white; padding: 20px; border: 1px solid #ddd; border-radius: 4px; white-space: pre-wrap; }
+        .meta { color: #666; font-size: 0.9em; margin: 10px 0; }
+        .edit-item { background: white; padding: 15px; margin: 10px 0; border: 1px solid #ddd; border-radius: 4px; }
+        .diff-add { background: #d4edda; color: #155724; }
+        .diff-remove { background: #f8d7da; color: #721c24; }
+        .diff-context { color: #555; }
+        pre.diff { background: #f8f8f8; padding: 10px; border: 1px solid #ddd; overflow-x: auto; font-size: 0.85em; }
+        .contributors { margin: 10px 0; }
+        .error { color: red; }
+        form { background: white; padding: 20px; border: 1px solid #ddd; border-radius: 4px; }
+        label { display: block; margin-top: 10px; font-weight: bold; }
+        input[type=text], textarea { width: 100%; padding: 8px; box-sizing: border-box; border: 1px solid #ccc; border-radius: 3px; }
+        textarea { height: 200px; font-family: monospace; }
+        input[type=submit] { margin-top: 15px; padding: 10px 20px; background: #0645ad; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        input[type=submit]:hover { background: #0535a0; }
+    </style>
+</head>
+<body>
+    <div class="nav">
+        <a href="/entries">All Entries</a>
+        <a href="/entries/new">New Entry</a>
+    </div>
+    {% block content %}{% endblock %}
+</body>
+</html>
+'''
+
+ENTRIES_LIST_TEMPLATE = BASE_TEMPLATE.replace('{% block content %}{% endblock %}', '''{% block content %}
+<h1>Wiki Entries</h1>
+{% if entries %}
+<ul class="entry-list">
+    {% for entry in entries %}
+    <li><a href="/entries/{{ entry['id'] }}">{{ entry['title'] | e }}</a></li>
+    {% endfor %}
+</ul>
+{% else %}
+<p>No entries yet. <a href="/entries/new">Create the first entry!</a></p>
+{% endif %}
+{% endblock %}''')
+
+ENTRY_DETAIL_TEMPLATE = BASE_TEMPLATE.replace('{% block content %}{% endblock %}', '''{% block content %}
+<h1>{{ entry['title'] | e }}</h1>
+<div class="meta">
+    Last edited by <strong>{{ entry['last_modified_by'] | e }}</strong> on {{ entry['last_modified_at'] | e }}
+</div>
+<div class="contributors">
+    <strong>Contributors:</strong> {{ contributors | join(', ') | e }}
+</div>
+<div style="margin: 10px 0;">
+    <a href="/entries/{{ entry['id'] }}/edit">Edit this entry</a> |
+    <a href="/entries/{{ entry['id'] }}/edits">View edit history</a>
+</div>
+<div class="content-box">{{ entry['content'] | e }}</div>
+{% endblock %}''')
+
+NEW_ENTRY_TEMPLATE = BASE_TEMPLATE.replace('{% block content %}{% endblock %}', '''{% block content %}
+<h1>New Entry</h1>
+<form method="post" action="/entries/new">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="title">Title</label>
+    <input type="text" id="title" name="title" required maxlength="500">
+    <label for="content">Content</label>
+    <textarea id="content" name="content" required></textarea>
+    <label for="created_by">Your Name</label>
+    <input type="text" id="created_by" name="created_by" required maxlength="200">
+    <input type="submit" value="Create Entry">
+</form>
+{% endblock %}''')
+
+EDIT_ENTRY_TEMPLATE = BASE_TEMPLATE.replace('{% block content %}{% endblock %}', '''{% block content %}
+<h1>Edit: {{ entry['title'] | e }}</h1>
+<form method="post" action="/entries/{{ entry['id'] }}/edit">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label for="content">Content</label>
+    <textarea id="content" name="content" required>{{ entry['content'] | e }}</textarea>
+    <label for="modified_by">Your Name</label>
+    <input type="text" id="modified_by" name="modified_by" required maxlength="200">
+    <label for="summary">Edit Summary</label>
+    <input type="text" id="summary" name="summary" required maxlength="500">
+    <input type="submit" value="Save Changes">
+</form>
+{% endblock %}''')
+
+EDITS_TEMPLATE = BASE_TEMPLATE.replace('{% block content %}{% endblock %}', '''{% block content %}
+<h1>Edit History: {{ entry['title'] | e }}</h1>
+<a href="/entries/{{ entry['id'] }}">Back to entry</a>
+{% if edits %}
+{% for edit in edits %}
+<div class="edit-item">
+    <div class="meta">
+        <strong>{{ edit['modified_by'] | e }}</strong> &mdash; {{ edit['modified_at'] | e }}
+        {% if edit['summary'] %} &mdash; <em>{{ edit['summary'] | e }}</em>{% endif %}
+    </div>
+    <pre class="diff">{% for line in edit['diff'] %}{% if line.startswith('+') %}<span class="diff-add">{{ line | e }}</span>{% elif line.startswith('-') %}<span class="diff-remove">{{ line | e }}</span>{% else %}<span class="diff-context">{{ line | e }}</span>{% endif %}
+{% endfor %}</pre>
+</div>
+{% endfor %}
+{% else %}
+<p>No edits recorded yet.</p>
+{% endif %}
+{% endblock %}''')
+
+ERROR_TEMPLATE = BASE_TEMPLATE.replace('{% block content %}{% endblock %}', '''{% block content %}
+<h1>Error {{ code }}</h1>
+<p class="error">{{ message | e }}</p>
+<a href="/entries">Back to entries</a>
+{% endblock %}''')
+
+# --- Helper ---
+def now_iso():
+    return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+def render_error(code, message):
+    resp = make_response(render_template_string(ERROR_TEMPLATE, code=code, message=message), code)
+    return resp
+
+# --- Routes ---
+
+@app.route('/entries', methods=['GET'])
+def list_entries():
+    try:
+        db = get_db()
+        rows = db.execute('SELECT id, title FROM entries ORDER BY title ASC').fetchall()
+        entries = [{'id': row['id'], 'title': row['title']} for row in rows]
+        return make_response(render_template_string(ENTRIES_LIST_TEMPLATE, entries=entries), 200)
+    except Exception:
+        return render_error(500, 'An internal error occurred.')
+
+@app.route('/entries/new', methods=['GET'])
+def new_entry_form():
+    generate_csrf_token()
+    return make_response(render_template_string(NEW_ENTRY_TEMPLATE), 200)
+
+@app.route('/entries/new', methods=['POST'])
+def create_entry_form():
+    try:
+        token = request.form.get('csrf_token', '')
+        if not validate_csrf_token(token):
+            return render_error(403, 'Invalid CSRF token.')
+
+        title = request.form.get('title', '').strip()
+        content = request.form.get('content', '').strip()
+        created_by = request.form.get('created_by', '').strip()
+
+        if not title or not content or not created_by:
+            return render_error(400, 'All fields are required.')
+        if len(title) > 500 or len(created_by) > 200:
+            return render_error(400, 'Input too long.')
+
+        entry_id = str(uuid.uuid4())
+        now = now_iso()
+        db = get_db()
+        db.execute(
+            'INSERT INTO entries (id, title, content, created_by, last_modified_by, last_modified_at) VALUES (?, ?, ?, ?, ?, ?)',
+            (entry_id, title, content, created_by, created_by, now)
+        )
+        # Record initial edit
+        edit_id = str(uuid.uuid4())
+        diff_lines = list(difflib.unified_diff([], content.splitlines(keepends=True), fromfile='(new)', tofile='(created)', lineterm=''))
+        db.execute(
+            'INSERT INTO edits (id, entry_id, content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?)',
+            (edit_id, entry_id, content, created_by, now, 'Initial creation')
+        )
+        db.commit()
+        from flask import redirect
+        return redirect(f'/entries/{entry_id}', 303)
+    except Exception:
+        return render_error(500, 'An internal error occurred.')
+
+@app.route('/entries', methods=['POST'])
+def create_entry_api():
+    try:
+        data = request.get_json(silent=True)
+        if not data:
+            return jsonify({'error': 'Invalid JSON'}), 400
+
+        title = data.get('title', '').strip() if isinstance(data.get('title'), str) else ''
+        content = data.get('content', '').strip() if isinstance(data.get('content'), str) else ''
+        created_by = data.get('createdBy', '').strip() if isinstance(data.get('createdBy'), str) else ''
+
+        if not title or not content or not created_by:
+            return jsonify({'error': 'title, content, and createdBy are required'}), 400
+
+        entry_id = str(uuid.uuid4())
+        now = now_iso()
+        db = get_db()
+        db.execute(
+            'INSERT INTO entries (id, title, content, created_by, last_modified_by, last_modified_at) VALUES (?, ?, ?, ?, ?, ?)',
+            (entry_id, title, content, created_by, created_by, now)
+        )
+        edit_id = str(uuid.uuid4())
+        db.execute(
+            'INSERT INTO edits (id, entry_id, content, modified_by, modified_at, summary) VALUES (?, ?, ?, ?, ?, ?)',
+            (edit_id, entry_id, content, created_by, now, 'Initial creation')
+        )
+        db.commit()
+        return jsonify({
+            'id': entry_id,
+            'title': title,
+            'content': content,
+            'lastModifiedBy': created_by,
+            'lastModifiedAt': now
+        }), 201
+    except Exception:
+        return jsonify({'error': 'An internal error occurred.'}), 500
+
+@app.route('/entries/<entry_id>', methods=['GET'])
+def get_entry(entry_id):
+    try:
+        db = get_db()
+        row = db.execute('SELECT * FROM entries WHERE id = ?', (entry_id,)).fetchone()
+        if row is None:
+            return render_error(404, 'Entry not found.')
+        entry = dict(row)
+
+        # Get contributors
+        contrib_rows = db.execute(
+            'SELECT DISTINCT modified_by FROM edits WHERE entry_id = ? ORDER BY modified_at ASC',
+            (entry_id,)
+        ).fetchall()
+        contributors = [r['modified_by'] for r in contrib_rows]
+        if entry['created_by'] not in contributors:
+            contributors.insert(0, entry['created_by'])
+
+        return make_response(render_template_string(ENTRY_DETAIL_TEMPLATE, entry=entry, contributors=contributors), 200)
+    except Exception:
+        return render_error(500, 'An internal error occurred.')
+
+@app.route('/entries/<entry_id>/edit', methods=['GET'])
+def edit

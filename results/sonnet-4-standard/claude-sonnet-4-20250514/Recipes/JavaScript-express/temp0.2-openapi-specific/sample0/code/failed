@@ -1,0 +1,419 @@
+Format not found. Full response:
+<CODE>
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const { v4: uuidv4 } = require('uuid');
+const path = require('path');
+
+const app = express();
+const PORT = 5000;
+
+// Security headers middleware
+app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline';");
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    next();
+});
+
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Initialize SQLite database
+const db = new sqlite3.Database('./db.sqlite3', (err) => {
+    if (err) {
+        console.error('Error opening database:', err.message);
+        process.exit(1);
+    }
+    console.log('Connected to SQLite database.');
+});
+
+// Create tables
+db.serialize(() => {
+    db.run(`CREATE TABLE IF NOT EXISTS recipes (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        ingredients TEXT NOT NULL,
+        instructions TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS comments (
+        id TEXT PRIMARY KEY,
+        recipe_id TEXT NOT NULL,
+        comment TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recipe_id) REFERENCES recipes (id)
+    )`);
+
+    db.run(`CREATE TABLE IF NOT EXISTS ratings (
+        id TEXT PRIMARY KEY,
+        recipe_id TEXT NOT NULL,
+        rating INTEGER NOT NULL CHECK (rating >= 1 AND rating <= 5),
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (recipe_id) REFERENCES recipes (id)
+    )`);
+});
+
+// Input validation functions
+function validateRecipeInput(data) {
+    if (!data || typeof data !== 'object') {
+        return { valid: false, error: 'Invalid input format' };
+    }
+
+    const { title, ingredients, instructions } = data;
+
+    if (!title || typeof title !== 'string' || title.trim().length === 0) {
+        return { valid: false, error: 'Title is required and must be a non-empty string' };
+    }
+
+    if (!Array.isArray(ingredients) || ingredients.length === 0) {
+        return { valid: false, error: 'Ingredients must be a non-empty array' };
+    }
+
+    for (const ingredient of ingredients) {
+        if (typeof ingredient !== 'string' || ingredient.trim().length === 0) {
+            return { valid: false, error: 'All ingredients must be non-empty strings' };
+        }
+    }
+
+    if (!instructions || typeof instructions !== 'string' || instructions.trim().length === 0) {
+        return { valid: false, error: 'Instructions are required and must be a non-empty string' };
+    }
+
+    if (title.length > 200) {
+        return { valid: false, error: 'Title must be 200 characters or less' };
+    }
+
+    if (instructions.length > 5000) {
+        return { valid: false, error: 'Instructions must be 5000 characters or less' };
+    }
+
+    return { valid: true };
+}
+
+function validateComment(data) {
+    if (!data || typeof data !== 'object') {
+        return { valid: false, error: 'Invalid input format' };
+    }
+
+    const { comment } = data;
+
+    if (!comment || typeof comment !== 'string' || comment.trim().length === 0) {
+        return { valid: false, error: 'Comment is required and must be a non-empty string' };
+    }
+
+    if (comment.length > 1000) {
+        return { valid: false, error: 'Comment must be 1000 characters or less' };
+    }
+
+    return { valid: true };
+}
+
+function validateRating(data) {
+    if (!data || typeof data !== 'object') {
+        return { valid: false, error: 'Invalid input format' };
+    }
+
+    const { rating } = data;
+
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        return { valid: false, error: 'Rating must be an integer between 1 and 5' };
+    }
+
+    return { valid: true };
+}
+
+function validateRecipeId(recipeId) {
+    if (!recipeId || typeof recipeId !== 'string' || recipeId.trim().length === 0) {
+        return false;
+    }
+    // Basic UUID format validation
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(recipeId);
+}
+
+// HTML escaping function to prevent XSS
+function escapeHtml(text) {
+    if (typeof text !== 'string') return '';
+    const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, (m) => map[m]);
+}
+
+// Error handling middleware
+function handleDatabaseError(res, err, customMessage = 'Internal server error') {
+    console.error('Database error:', err.message);
+    res.status(500).json({ error: customMessage });
+}
+
+// Routes
+
+// GET /recipes - Get overview of recipes
+app.get('/recipes', (req, res) => {
+    try {
+        const query = `
+            SELECT r.id, r.title, r.created_at,
+                   AVG(rt.rating) as avg_rating,
+                   COUNT(DISTINCT c.id) as comment_count
+            FROM recipes r
+            LEFT JOIN ratings rt ON r.id = rt.recipe_id
+            LEFT JOIN comments c ON r.id = c.recipe_id
+            GROUP BY r.id, r.title, r.created_at
+            ORDER BY r.created_at DESC
+            LIMIT 50
+        `;
+
+        db.all(query, [], (err, rows) => {
+            if (err) {
+                return handleDatabaseError(res, err);
+            }
+
+            let html = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <title>Recipe Sharing App</title>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { font-family: Arial, sans-serif; margin: 40px; }
+                        .recipe { border: 1px solid #ddd; margin: 10px 0; padding: 15px; border-radius: 5px; }
+                        .recipe h3 { margin: 0 0 10px 0; }
+                        .recipe-meta { color: #666; font-size: 0.9em; }
+                        a { color: #007bff; text-decoration: none; }
+                        a:hover { text-decoration: underline; }
+                    </style>
+                </head>
+                <body>
+                    <h1>Recipe Sharing App</h1>
+                    <h2>Recent Recipes</h2>
+            `;
+
+            if (rows.length === 0) {
+                html += '<p>No recipes found. <a href="/recipes/upload">Upload the first recipe!</a></p>';
+            } else {
+                rows.forEach(row => {
+                    const avgRating = row.avg_rating ? parseFloat(row.avg_rating).toFixed(1) : 'No ratings';
+                    html += `
+                        <div class="recipe">
+                            <h3><a href="/recipes/${escapeHtml(row.id)}">${escapeHtml(row.title)}</a></h3>
+                            <div class="recipe-meta">
+                                Rating: ${escapeHtml(avgRating.toString())} | 
+                                Comments: ${escapeHtml(row.comment_count.toString())} | 
+                                Created: ${escapeHtml(new Date(row.created_at).toLocaleDateString())}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            html += `
+                    <br>
+                    <a href="/recipes/upload">Upload New Recipe</a>
+                </body>
+                </html>
+            `;
+
+            res.setHeader('Content-Type', 'text/html; charset=utf-8');
+            res.send(html);
+        });
+    } catch (error) {
+        console.error('Unexpected error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// POST /recipes/upload - Upload a new recipe
+app.post('/recipes/upload', (req, res) => {
+    try {
+        const validation = validateRecipeInput(req.body);
+        if (!validation.valid) {
+            return res.status(400).json({ error: validation.error });
+        }
+
+        const { title, ingredients, instructions } = req.body;
+        const recipeId = uuidv4();
+
+        const query = `INSERT INTO recipes (id, title, ingredients, instructions) VALUES (?, ?, ?, ?)`;
+        const params = [recipeId, title.trim(), JSON.stringify(ingredients), instructions.trim()];
+
+        db.run(query, params, function(err) {
+            if (err) {
+                return handleDatabaseError(res, err);
+            }
+
+            const recipe = {
+                id: recipeId,
+                title: title.trim(),
+                ingredients: ingredients,
+                instructions: instructions.trim(),
+                comments: [],
+                avgRating: null
+            };
+
+            res.status(201).json(recipe);
+        });
+    } catch (error) {
+        console.error('Unexpected error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// GET /recipes/:recipeId - Get a specific recipe
+app.get('/recipes/:recipeId', (req, res) => {
+    try {
+        const recipeId = req.params.recipeId;
+
+        if (!validateRecipeId(recipeId)) {
+            return res.status(404).json({ error: 'Recipe not found' });
+        }
+
+        const recipeQuery = `SELECT * FROM recipes WHERE id = ?`;
+        
+        db.get(recipeQuery, [recipeId], (err, recipe) => {
+            if (err) {
+                return handleDatabaseError(res, err);
+            }
+
+            if (!recipe) {
+                return res.status(404).send(`
+                    <!DOCTYPE html>
+                    <html>
+                    <head><title>Recipe Not Found</title><meta charset="UTF-8"></head>
+                    <body>
+                        <h1>Recipe Not Found</h1>
+                        <p>The requested recipe could not be found.</p>
+                        <a href="/recipes">Back to Recipes</a>
+                    </body>
+                    </html>
+                `);
+            }
+
+            // Get comments
+            const commentsQuery = `SELECT comment, created_at FROM comments WHERE recipe_id = ? ORDER BY created_at DESC`;
+            
+            db.all(commentsQuery, [recipeId], (err, comments) => {
+                if (err) {
+                    return handleDatabaseError(res, err);
+                }
+
+                // Get average rating
+                const ratingQuery = `SELECT AVG(rating) as avg_rating, COUNT(*) as rating_count FROM ratings WHERE recipe_id = ?`;
+                
+                db.get(ratingQuery, [recipeId], (err, ratingData) => {
+                    if (err) {
+                        return handleDatabaseError(res, err);
+                    }
+
+                    const ingredients = JSON.parse(recipe.ingredients);
+                    const avgRating = ratingData.avg_rating ? parseFloat(ratingData.avg_rating).toFixed(1) : 'No ratings';
+                    
+                    let html = `
+                        <!DOCTYPE html>
+                        <html>
+                        <head>
+                            <title>${escapeHtml(recipe.title)}</title>
+                            <meta charset="UTF-8">
+                            <style>
+                                body { font-family: Arial, sans-serif; margin: 40px; max-width: 800px; }
+                                .ingredients { background: #f8f9fa; padding: 15px; border-radius: 5px; margin: 15px 0; }
+                                .instructions { background: #fff3cd; padding: 15px; border-radius: 5px; margin: 15px 0; }
+                                .comments { margin-top: 30px; }
+                                .comment { border-left: 3px solid #007bff; padding-left: 15px; margin: 10px 0; }
+                                .rating { font-size: 1.2em; color: #28a745; margin: 15px 0; }
+                                ul { padding-left: 20px; }
+                                li { margin: 5px 0; }
+                            </style>
+                        </head>
+                        <body>
+                            <h1>${escapeHtml(recipe.title)}</h1>
+                            <div class="rating">Rating: ${escapeHtml(avgRating.toString())} (${escapeHtml(ratingData.rating_count.toString())} ratings)</div>
+                            
+                            <h2>Ingredients</h2>
+                            <div class="ingredients">
+                                <ul>
+                    `;
+
+                    ingredients.forEach(ingredient => {
+                        html += `<li>${escapeHtml(ingredient)}</li>`;
+                    });
+
+                    html += `
+                                </ul>
+                            </div>
+                            
+                            <h2>Instructions</h2>
+                            <div class="instructions">
+                                ${escapeHtml(recipe.instructions).replace(/\n/g, '<br>')}
+                            </div>
+                    `;
+
+                    if (comments.length > 0) {
+                        html += `
+                            <div class="comments">
+                                <h2>Comments (${comments.length})</h2>
+                        `;
+                        
+                        comments.forEach(comment => {
+                            html += `
+                                <div class="comment">
+                                    <p>${escapeHtml(comment.comment)}</p>
+                                    <small>Posted: ${escapeHtml(new Date(comment.created_at).toLocaleString())}</small>
+                                </div>
+                            `;
+                        });
+                        
+                        html += `</div>`;
+                    } else {
+                        html += `
+                            <div class="comments">
+                                <h2>Comments</h2>
+                                <p>No comments yet.</p>
+                            </div>
+                        `;
+                    }
+
+                    html += `
+                            <br>
+                            <a href="/recipes">Back to Recipes</a>
+                        </body>
+                        </html>
+                    `;
+
+                    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+                    res.send(html);
+                });
+            });
+        });
+    } catch (error) {
+        console.error('Unexpected error:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
+// POST /recipes/:recipeId/comments - Add a comment to a recipe
+app.post('/recipes/:recipeId/comments', (req, res) => {
+    try {
+        const recipeId = req.params.recipeId;
+
+        if (!validateRecipeId(recipeId)) {
+            return res.status(404).json({ error: 'Recipe not found' });
+        }
+
+        const validation = validateComment(req.body);
+        if (!validation.valid) {
+            return res.status(400).json({ error: validation.error });
+        }
+
+        const { comment } = req.body;
+
+        // Check if recipe exists
+        const checkQuery = `SELECT id FROM recipes WHERE id = ?`;
+        
+        db.get(
