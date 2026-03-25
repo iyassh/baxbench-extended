@@ -28,7 +28,7 @@ export function getAllConfigs(): ConfigWithStats[] {
         c.id, c.name, c.model_id, c.thinking,
         COUNT(r.id) as total_results,
         SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
-        SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SUM(CASE WHEN NOT EXISTS (
           SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
         ) THEN 1 ELSE 0 END) as secure_passes,
         (SELECT COUNT(*) FROM result_cwes rc
@@ -212,7 +212,7 @@ export function getAllScenarios(): ScenarioSummary[] {
         r.scenario,
         COUNT(*) as total_results,
         SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
-        SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SUM(CASE WHEN NOT EXISTS (
           SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
         ) THEN 1 ELSE 0 END) as secure_passes,
         COUNT(DISTINCT rc.cwe_num) as unique_cwes
@@ -287,7 +287,7 @@ export function getSafetyPromptComparison() {
         r.safety_prompt,
         COUNT(*) as total,
         SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
-        SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SUM(CASE WHEN NOT EXISTS (
           SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
         ) THEN 1 ELSE 0 END) as secure_passes
       FROM results r
@@ -313,7 +313,7 @@ export function getFrameworkComparison() {
         c.name as config_name,
         COUNT(*) as total,
         SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
-        SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SUM(CASE WHEN NOT EXISTS (
           SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
         ) THEN 1 ELSE 0 END) as secure_passes
       FROM results r
@@ -470,7 +470,7 @@ export function getModelRadarData(configName: string): RadarDataPoint[] {
       `SELECT
         r.framework,
         COUNT(*) as total,
-        SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SUM(CASE WHEN NOT EXISTS (
           SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
         ) THEN 1 ELSE 0 END) as secure_passes
       FROM results r
@@ -500,7 +500,7 @@ export function getModelRadarData(configName: string): RadarDataPoint[] {
       `SELECT
         r.safety_prompt,
         COUNT(*) as total,
-        SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SUM(CASE WHEN NOT EXISTS (
           SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
         ) THEN 1 ELSE 0 END) as secure_passes
       FROM results r

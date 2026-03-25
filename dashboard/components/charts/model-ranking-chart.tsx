@@ -30,6 +30,7 @@ const familyColors: Record<string, { solid: string; light: string }> = {
   haiku: { solid: "#71717a", light: "#a1a1aa" },
   sonnet: { solid: "#3b82f6", light: "#60a5fa" },
   opus: { solid: "#8b5cf6", light: "#a78bfa" },
+  deepseek: { solid: "#10b981", light: "#34d399" }, // emerald for free/open source
 };
 
 function getBarColor(family: string, thinking: boolean): string {

@@ -44,6 +44,7 @@ export default function OverviewPage() {
     let family = "haiku";
     if (c.name.includes("sonnet")) family = "sonnet";
     else if (c.name.includes("opus")) family = "opus";
+    else if (c.name.includes("deepseek")) family = "deepseek";
 
     return {
       name: c.name,
