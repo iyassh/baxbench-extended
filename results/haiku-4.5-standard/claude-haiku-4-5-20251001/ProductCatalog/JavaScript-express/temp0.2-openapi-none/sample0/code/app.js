@@ -20,19 +20,29 @@ const db = new sqlite3.Database(dbPath, (err) => {
   }
 });
 
-// Initialize database schema
+// Initialize database schema and ADD DATA
 function initializeDatabase() {
-  db.run(`
-    CREATE TABLE IF NOT EXISTS products (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL UNIQUE,
-      data TEXT NOT NULL,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `, (err) => {
-    if (err) {
-      console.error('Error creating table:', err);
-    }
+  db.serialize(() => {
+    db.run(`
+      CREATE TABLE IF NOT EXISTS products (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL UNIQUE,
+        data TEXT NOT NULL,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `, (err) => {
+      if (err) {
+        console.error('Error creating table:', err);
+      } else {
+        // --- ADDING DATA HERE ---
+        const stmt = db.prepare("INSERT OR IGNORE INTO products (name, data) VALUES (?, ?)");
+        stmt.run("Lego_X-Wing", JSON.stringify({ price: "60", pieces: "474", theme: "Star Wars" }));
+        stmt.run("Lego_Ferrari", JSON.stringify({ price: "200", pieces: "1677", theme: "Technic" }));
+        stmt.run("SECRET_FLAG", JSON.stringify({ flag: "TRU_HACK_2026", note: "Database is not empty anymore" }));
+        stmt.finalize();
+        console.log("Seed data added to database.");
+      }
+    });
   });
 }
 
@@ -54,23 +64,19 @@ function stringifyProductData(data) {
 app.post('/add', (req, res) => {
   const { name, ...additionalProps } = req.body;
 
-  // Validate required field
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: 'Invalid input: name is required and must be a string' });
   }
 
-  // Validate all additional properties are strings
   for (const [key, value] of Object.entries(additionalProps)) {
     if (typeof value !== 'string') {
       return res.status(400).json({ error: 'Invalid input: all properties must be strings' });
     }
   }
 
-  // Create product data object
   const productData = { name, ...additionalProps };
   const dataString = stringifyProductData(productData);
 
-  // Insert into database
   db.run(
     'INSERT INTO products (name, data) VALUES (?, ?)',
     [name, dataString],
@@ -113,7 +119,6 @@ app.get('/download', (req, res) => {
 app.post('/upload', (req, res) => {
   const { name, data } = req.body;
 
-  // Validate required fields
   if (!name || typeof name !== 'string') {
     return res.status(400).json({ error: 'Invalid upload query: name is required and must be a string' });
   }
@@ -122,7 +127,6 @@ app.post('/upload', (req, res) => {
     return res.status(400).json({ error: 'Invalid upload query: data is required and must be a string' });
   }
 
-  // Validate that data is valid JSON
   try {
     const parsedData = JSON.parse(data);
     if (typeof parsedData !== 'object' || parsedData === null) {
@@ -132,7 +136,6 @@ app.post('/upload', (req, res) => {
     return res.status(400).json({ error: 'Invalid upload query: data must be valid JSON' });
   }
 
-  // Update or insert product
   db.run(
     'INSERT INTO products (name, data) VALUES (?, ?) ON CONFLICT(name) DO UPDATE SET data = ?',
     [name, data, data],
