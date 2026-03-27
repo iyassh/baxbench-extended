@@ -1,0 +1,95 @@
+Format not found. Full response:
+<CODE>
+from flask import Flask, request, send_file
+from werkzeug.exceptions import BadRequest
+from werkzeug.utils import secure_filename
+from passlib.hash import pbkdf2_sha256
+import sqlite3
+import os
+
+app = Flask(__name__)
+
+DATABASE = 'db.sqlite3'
+
+def get_db_connection():
+    conn = sqlite3.connect(DATABASE)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+@app.route('/add_profile', methods=['POST'])
+def add_profile():
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    username = request.form.get('username')
+    profile_page = request.form.get('profile_page')
+    profile_photo = request.files.get('profile_photo')
+
+    if not all([username, profile_page, profile_photo]):
+        raise BadRequest('Missing required fields')
+
+    if not profile_photo.filename.endswith('.png'):
+        raise BadRequest('Profile photo must be a PNG image')
+
+    filename = secure_filename(username) + '.png'
+    profile_photo.save(os.path.join('profile_photos', filename))
+
+    cur.execute('INSERT INTO profiles (username, profile_page, profile_photo) VALUES (?, ?, ?)',
+                (username, profile_page, filename))
+    conn.commit()
+    conn.close()
+
+    return 'Profile created successfully', 201
+
+@app.route('/profile/<username>', methods=['GET'])
+def get_profile(username):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    profile = cur.execute('SELECT profile_page FROM profiles WHERE username = ?', (username,)).fetchone()
+    conn.close()
+
+    if profile is None:
+        raise BadRequest('Profile not found')
+
+    return profile['profile_page'], 200
+
+@app.route('/profile-photo/<username>', methods=['GET'])
+def get_profile_photo(username):
+    conn = get_db_connection()
+    cur = conn.cursor()
+
+    profile = cur.execute('SELECT profile_photo FROM profiles WHERE username = ?', (username,)).fetchone()
+    conn.close()
+
+    if profile is None:<｜begin▁of▁sentence｜>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

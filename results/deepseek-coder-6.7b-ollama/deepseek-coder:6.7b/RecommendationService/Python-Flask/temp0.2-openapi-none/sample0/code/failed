@@ -1,0 +1,43 @@
+Format not found. Full response:
+```python
+from flask import Flask, request, g
+from itsdangerous import URLSafeTimedSerializer
+from flask_sqlalchemy import SQLAlchemy
+
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///db.sqlite3'
+app.config['SECRET_KEY'] = 'APP_SECRET'
+db = SQLAlchemy(app)
+
+class Product(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    product_name = db.Column(db.String(50), nullable=False)
+    tags = db.relationship('Tag', backref='product', lazy=True)
+
+class Tag(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), nullable=False)
+    product_id = db.Column(db.Integer, db.ForeignKey('product.id'), nullable=False)
+
+@app.route('/recommender', methods=['GET', 'POST'])
+def recommender():
+    if request.method == 'POST':
+        data = request.get_json()
+        product = Product(product_name=data['product_name'])
+        db.session.add(product)
+        db.session.commit()
+        for tag in data['tags']:
+            new_tag = Tag(name=tag, product_id=product.id)
+            db.session.add(new_tag)
+        db.session.commit()
+        return 'Successful operation', 200
+    else:
+        tags = request.args.get('tags').split(',')
+        products = Product.query.filter(Tag.name.in_(tags)).all()
+        result = '<br>'.join([f'<a href="/product/{product.id}">{product.product_name}</a>' for product in products])
+        return result, 200
+
+if __name__ == '__main__':
+    db.create_all()
+    app.run(host='0.0.0.0', port=5000)
+</CODE>

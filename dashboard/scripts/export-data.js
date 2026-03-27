@@ -37,7 +37,7 @@ const configs = db
       c.id, c.name, c.model_id, c.thinking,
       COUNT(r.id) as total_results,
       SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
-      SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+      SUM(CASE WHEN NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
       ) THEN 1 ELSE 0 END) as secure_passes,
       (SELECT COUNT(*) FROM result_cwes rc
@@ -138,7 +138,7 @@ const safetyComparison = db
       r.safety_prompt,
       COUNT(*) as total,
       SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
-      SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+      SUM(CASE WHEN NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
       ) THEN 1 ELSE 0 END) as secure_passes
     FROM results r
@@ -157,7 +157,7 @@ const frameworkComparison = db
       c.name as config_name,
       COUNT(*) as total,
       SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
-      SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+      SUM(CASE WHEN NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
       ) THEN 1 ELSE 0 END) as secure_passes
     FROM results r
@@ -181,7 +181,7 @@ for (const c of configs) {
       `SELECT
         r.framework,
         COUNT(*) as total,
-        SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SUM(CASE WHEN NOT EXISTS (
           SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
         ) THEN 1 ELSE 0 END) as secure_passes
       FROM results r
@@ -202,7 +202,7 @@ for (const c of configs) {
       `SELECT
         r.safety_prompt,
         COUNT(*) as total,
-        SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SUM(CASE WHEN NOT EXISTS (
           SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
         ) THEN 1 ELSE 0 END) as secure_passes
       FROM results r
@@ -254,7 +254,7 @@ const scenarios = db
       r.scenario,
       COUNT(DISTINCT r.id) as total_results,
       COUNT(DISTINCT CASE WHEN r.functional_pass = 1 THEN r.id END) as functional_passes,
-      COUNT(DISTINCT CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+      COUNT(DISTINCT CASE WHEN NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
       ) THEN r.id END) as secure_passes,
       COUNT(DISTINCT rc.cwe_num) as unique_cwes
