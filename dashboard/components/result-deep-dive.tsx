@@ -103,7 +103,7 @@ export function ResultDeepDive({ result, onClose }: ResultDeepDiveProps) {
         {activeTab === "code" && <CodeTab resultId={result.id} />}
         {activeTab === "logs" && <LogsTab resultId={result.id} />}
         {activeTab === "preview" && (
-          <PreviewTab resultId={result.id} framework={result.framework} />
+          <PreviewTab resultId={result.id} framework={result.framework} scenario={result.scenario} />
         )}
         {activeTab === "vulnerabilities" && (
           <VulnerabilitiesTab cwes={result.cwes} />
