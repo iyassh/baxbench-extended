@@ -86,6 +86,7 @@ export function ModelDetail({
     return (
       <ResultDeepDive
         result={selectedResult}
+        configName={config.name}
         onClose={() => setSelectedResult(null)}
       />
     );
