@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import type { ConfigWithStats, RadarDataPoint, ResultWithCwes } from "@/lib/types";
 import { RadarChart } from "@/components/charts/radar-chart";
+import { ResultDeepDive } from "@/components/result-deep-dive";
 import { cn } from "@/lib/utils";
 
 interface ModelDetailProps {
@@ -50,6 +52,7 @@ export function ModelDetail({
   results,
   onClose: _onClose,
 }: ModelDetailProps) {
+  const [selectedResult, setSelectedResult] = useState<ResultWithCwes | null>(null);
   const family = getFamily(config.name);
   const secPass = Math.round(config.sec_pass_at_1 * 1000) / 10;
   const passAt1 = Math.round(config.pass_at_1 * 1000) / 10;
@@ -74,29 +77,27 @@ export function ModelDetail({
     .slice(0, 8);
   const maxCweCount = topCwes.length > 0 ? topCwes[0].count : 1;
 
-  // Scenario summary
-  const scenarioMap = new Map<
-    string,
-    { total: number; functional: number; secure: number; cwes: number }
-  >();
-  for (const r of results) {
-    if (!scenarioMap.has(r.scenario)) {
-      scenarioMap.set(r.scenario, {
-        total: 0,
-        functional: 0,
-        secure: 0,
-        cwes: 0,
-      });
-    }
-    const entry = scenarioMap.get(r.scenario)!;
-    entry.total++;
-    if (r.functional_pass) entry.functional++;
-    if (r.functional_pass && r.cwes.length === 0) entry.secure++;
-    entry.cwes += r.cwes.length;
+  // If a result is selected, show the deep-dive
+  if (selectedResult) {
+    return (
+      <ResultDeepDive
+        result={selectedResult}
+        onClose={() => setSelectedResult(null)}
+      />
+    );
   }
-  const scenarios = Array.from(scenarioMap.entries())
-    .map(([name, stats]) => ({ name, ...stats }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+
+  // Sort results for the table
+  const sortedResults = [...results].sort((a, b) => {
+    const scenarioCmp = a.scenario.localeCompare(b.scenario);
+    if (scenarioCmp !== 0) return scenarioCmp;
+    const fwCmp = a.framework.localeCompare(b.framework);
+    if (fwCmp !== 0) return fwCmp;
+    return a.safety_prompt.localeCompare(b.safety_prompt);
+  });
+
+  // Group by scenario for visual separation
+  let lastScenario = "";
 
   return (
     <div className="space-y-8">
@@ -204,11 +205,14 @@ export function ModelDetail({
         </div>
       )}
 
-      {/* Results by Scenario */}
-      {scenarios.length > 0 && (
+      {/* Results — individual rows */}
+      {sortedResults.length > 0 && (
         <div>
           <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">
-            Results by Scenario
+            All Results
+            <span className="text-zinc-600 ml-2">
+              Click a row to inspect
+            </span>
           </p>
           <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
             <table className="w-full text-sm">
@@ -217,14 +221,17 @@ export function ModelDetail({
                   <th className="text-left text-xs text-zinc-500 font-medium px-3 py-2">
                     Scenario
                   </th>
-                  <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
-                    Tests
+                  <th className="text-left text-xs text-zinc-500 font-medium px-3 py-2">
+                    Framework
+                  </th>
+                  <th className="text-left text-xs text-zinc-500 font-medium px-3 py-2">
+                    Safety
                   </th>
                   <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
-                    Func Pass
+                    Func
                   </th>
                   <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
-                    Sec Pass
+                    Sec
                   </th>
                   <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
                     CWEs
@@ -232,52 +239,55 @@ export function ModelDetail({
                 </tr>
               </thead>
               <tbody>
-                {scenarios.map((s) => (
-                  <tr
-                    key={s.name}
-                    className="border-b border-zinc-800/50 last:border-0"
-                  >
-                    <td className="px-3 py-2 text-zinc-300 truncate max-w-[160px]">
-                      {s.name}
-                    </td>
-                    <td className="px-3 py-2 text-right text-zinc-400 tabular-nums">
-                      {s.total}
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      <span
-                        className={
-                          s.functional / s.total >= 0.8
-                            ? "text-emerald-400"
-                            : s.functional / s.total >= 0.5
-                              ? "text-amber-400"
-                              : "text-red-400"
-                        }
-                      >
-                        {s.functional}/{s.total}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      <span
-                        className={
-                          s.secure / s.total >= 0.8
-                            ? "text-emerald-400"
-                            : s.secure / s.total >= 0.5
-                              ? "text-amber-400"
-                              : "text-red-400"
-                        }
-                      >
-                        {s.secure}/{s.total}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right tabular-nums">
-                      {s.cwes > 0 ? (
-                        <span className="text-red-400">{s.cwes}</span>
-                      ) : (
-                        <span className="text-zinc-600">0</span>
+                {sortedResults.map((r) => {
+                  const showScenario = r.scenario !== lastScenario;
+                  lastScenario = r.scenario;
+                  return (
+                    <tr
+                      key={r.id}
+                      onClick={() => setSelectedResult(r)}
+                      className={cn(
+                        "border-b border-zinc-800/50 last:border-0 cursor-pointer hover:bg-zinc-800/40 transition-colors",
+                        showScenario && "border-t border-zinc-700/50"
                       )}
-                    </td>
-                  </tr>
-                ))}
+                    >
+                      <td className="px-3 py-1.5 text-zinc-300 text-xs truncate max-w-[140px]">
+                        {showScenario ? r.scenario : ""}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-zinc-500 font-mono">
+                        {r.framework.replace("JavaScript-", "").replace("Python-", "").replace("Go-", "")}
+                      </td>
+                      <td className="px-3 py-1.5 text-xs text-zinc-600">
+                        {r.safety_prompt}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-xs tabular-nums">
+                        <span
+                          className={
+                            r.functional_pass
+                              ? "text-emerald-400"
+                              : "text-red-400"
+                          }
+                        >
+                          {r.num_passed_ft}/{r.num_total_ft}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-xs">
+                        {r.functional_pass && r.cwes.length === 0 ? (
+                          <span className="text-emerald-400">pass</span>
+                        ) : (
+                          <span className="text-red-400">fail</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-1.5 text-right text-xs tabular-nums">
+                        {r.cwes.length > 0 ? (
+                          <span className="text-red-400">{r.cwes.length}</span>
+                        ) : (
+                          <span className="text-zinc-600">0</span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
