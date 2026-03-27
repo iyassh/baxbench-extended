@@ -69,6 +69,7 @@ def main(args: Any) -> None:
                 reasoning_effort=args.reasoning_effort,
                 openrouter=args.openrouter,
                 vllm=args.vllm,
+                ollama=args.ollama,
             )
             for env in envs
             for scenario in scenarios
@@ -96,6 +97,7 @@ def main(args: Any) -> None:
             openrouter=args.openrouter,
             vllm=args.vllm,
             vllm_port=args.vllm_port,
+            ollama=args.ollama,
         )
     elif args.mode == "test":
         task_handler.run_tests(
@@ -282,5 +284,10 @@ if __name__ == "__main__":
         type=int,
         default=8000,
         help="Port for VLLM server",
+    )
+    parser.add_argument(
+        "--ollama",
+        action="store_true",
+        help="Use local Ollama instance for generation",
     )
     main(parser.parse_args())
