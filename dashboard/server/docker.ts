@@ -149,7 +149,11 @@ export async function buildAndRun(
   const tag = `baxbench-preview-${Date.now()}`;
 
   // Create a temporary build directory with code + manifest files
-  const buildDir = path.join("/tmp", `baxbench-preview-${Date.now()}`);
+  const buildDir = path.join(
+    process.env.HOME || "/tmp",
+    ".baxbench-preview",
+    `build-${Date.now()}`
+  );
   fs.mkdirSync(buildDir, { recursive: true });
 
   try {
