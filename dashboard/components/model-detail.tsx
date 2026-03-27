@@ -17,6 +17,8 @@ function getFamily(name: string): string {
   if (name.includes("opus")) return "Opus";
   if (name.includes("sonnet")) return "Sonnet";
   if (name.includes("haiku")) return "Haiku";
+  if (name.includes("deepseek")) return "DeepSeek";
+  if (name.includes("llama")) return "Llama";
   return "Unknown";
 }
 
@@ -24,6 +26,8 @@ const familyDotColor: Record<string, string> = {
   Haiku: "bg-zinc-400",
   Sonnet: "bg-blue-400",
   Opus: "bg-purple-400",
+  DeepSeek: "bg-green-400",
+  Llama: "bg-orange-400",
   Unknown: "bg-zinc-500",
 };
 

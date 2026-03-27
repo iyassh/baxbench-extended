@@ -13,7 +13,7 @@ interface ModelFiltersProps {
   onFilterChange: (filters: ModelFilterState) => void;
 }
 
-const families = ["All", "Haiku", "Sonnet", "Opus"];
+const families = ["All", "Haiku", "Sonnet", "Opus", "DeepSeek", "Llama"];
 const modes = ["All", "Standard", "Thinking"];
 const sortOptions = [
   { value: "sec_pass_at_1", label: "sec_pass@1" },

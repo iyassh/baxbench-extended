@@ -307,6 +307,8 @@ export function getDistributionByFamily(): FamilyDistribution[] {
     if (c.name.includes("haiku")) family = "haiku";
     else if (c.name.includes("sonnet")) family = "sonnet";
     else if (c.name.includes("opus")) family = "opus";
+    else if (c.name.includes("deepseek")) family = "deepseek";
+    else if (c.name.includes("llama")) family = "llama";
 
     if (!family) continue;
 
