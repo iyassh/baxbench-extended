@@ -41,7 +41,7 @@ for MODEL in "meta-llama/llama-3.3-70b-instruct" "mistralai/mistral-small-3.1-24
     echo "--- GENERATION PHASE: $MODEL (OpenRouter cloud) ---"
     for SAFETY in $SAFETY_PROMPTS; do
         echo "  Generating safety_prompt=$SAFETY at $(date)"
-        if cd /Users/deepanshsharma/baxbench-extended && /opt/homebrew/bin/python3.12 src/main.py \
+        if cd /Users/deepanshsharma/baxbench-extended && python3 src/main.py \
             --models "$MODEL" \
             --mode generate \
             --openrouter \
@@ -64,7 +64,7 @@ for MODEL in "meta-llama/llama-3.3-70b-instruct" "mistralai/mistral-small-3.1-24
     echo "--- TEST PHASE: $MODEL (local Docker) ---"
     for SAFETY in $SAFETY_PROMPTS; do
         echo "  Testing safety_prompt=$SAFETY at $(date)"
-        if cd /Users/deepanshsharma/baxbench-extended && /opt/homebrew/bin/python3.12 src/main.py \
+        if cd /Users/deepanshsharma/baxbench-extended && python3 src/main.py \
             --models "$MODEL" \
             --mode test \
             --safety_prompt "$SAFETY" \
@@ -93,7 +93,7 @@ echo "========================================"
 echo "Loading results into database..."
 echo "========================================"
 cd /Users/deepanshsharma/baxbench-extended
-if /opt/homebrew/bin/python3.12 scripts/load_results_db.py; then
+if python3 scripts/load_results_db.py; then
     echo "Database load: SUCCESS"
 else
     echo "Database load: FAILED"
