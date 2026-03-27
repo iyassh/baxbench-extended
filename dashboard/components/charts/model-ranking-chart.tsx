@@ -31,6 +31,9 @@ const familyColors: Record<string, { solid: string; light: string }> = {
   sonnet: { solid: "#3b82f6", light: "#60a5fa" },
   opus: { solid: "#8b5cf6", light: "#a78bfa" },
   deepseek: { solid: "#10b981", light: "#34d399" }, // emerald for free/open source
+  llama: { solid: "#f59e0b", light: "#fbbf24" }, // amber for Meta's Llama
+  mistral: { solid: "#ec4899", light: "#f472b6" }, // pink for Mistral
+  gemma: { solid: "#06b6d4", light: "#22d3ee" }, // cyan for Google's Gemma
 };
 
 function getBarColor(family: string, thinking: boolean): string {

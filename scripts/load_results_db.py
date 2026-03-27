@@ -37,6 +37,10 @@ MODEL_CONFIGS = [
     {"name": "sonnet-4.6-thinking", "model": "claude-sonnet-4-6", "thinking": True},
     {"name": "haiku-4.5-standard", "model": "claude-haiku-4-5-20251001", "thinking": False},
     {"name": "haiku-4.5-thinking", "model": "claude-haiku-4-5-20251001", "thinking": True},
+    # OpenRouter models (free cloud)
+    {"name": "meta-llama-llama-3.3-70b-instruct-openrouter", "model": "meta-llama-llama-3.3-70b-instruct", "thinking": False},
+    {"name": "mistralai-mistral-small-3.1-24b-instruct-openrouter", "model": "mistralai-mistral-small-3.1-24b-instruct", "thinking": False},
+    {"name": "google-gemma-3-27b-it-openrouter", "model": "google-gemma-3-27b-it", "thinking": False},
 ]
 
 CONFIG_BY_NAME = {c["name"]: c for c in MODEL_CONFIGS}

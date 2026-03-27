@@ -45,6 +45,9 @@ export default function OverviewPage() {
     if (c.name.includes("sonnet")) family = "sonnet";
     else if (c.name.includes("opus")) family = "opus";
     else if (c.name.includes("deepseek")) family = "deepseek";
+    else if (c.name.includes("llama")) family = "llama";
+    else if (c.name.includes("mistral")) family = "mistral";
+    else if (c.name.includes("gemma")) family = "gemma";
 
     return {
       name: c.name,
