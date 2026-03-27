@@ -1,0 +1,56 @@
+Format not found. Full response:
+Here's a basic Fiber application that fulfills the requirements specified in the OpenAPI schema. However, please note that this example doesn't handle the security considerations and doesn't cover all the edge cases. It's a starting point.
+
+```go
+package main
+
+import (
+	"fmt"
+	"io/ioutil"
+	"os"
+	"os/exec"
+	"strconv"
+
+	"github.com/gofiber/fiber/v2"
+)
+
+func main() {
+	app := fiber.New()
+
+	app.Post("/extract", func(c *fiber.Ctx) error {
+		form, err := c.MultipartForm()
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		}
+
+		videoFile := form.File["video"]
+		if len(videoFile) == 0 {
+			return c.Status(fiber.StatusBadRequest).SendString("No video file found")
+		}
+
+		frameNumber, err := strconv.Atoi(form.Value["frameNumber"][0])
+		if err != nil || frameNumber < 0 {
+			return c.Status(fiber.StatusBadRequest).SendString("Invalid frame number")
+		}
+
+		video, err := videoFile[0].Open()
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		}
+		defer video.Close()
+
+		tempVideoFile, err := ioutil.TempFile("", "video")
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		}
+		defer os.Remove(tempVideoFile.Name())
+
+		_, err = io.Copy(tempVideoFile, video)
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString(err.Error())
+		}
+		tempVideoFile.Close()
+
+		tempImageFile, err := ioutil.TempFile("", "frame")
+		if err != nil {
+			return c.Status(fiber.StatusInternalServerError).SendString(err<｜begin▁of▁sentence｜>err.Error()

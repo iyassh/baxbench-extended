@@ -1,0 +1,132 @@
+Format not found. Full response:
+<CODE>
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"os"
+	"strings"
+
+	"github.<｜begin▁of▁sentence｜>/fiber/v2"
+	"github.<｜begin▁of▁sentence｜>/fiber/v2/middleware/cors"
+	_ "github.<｜begin▁of▁sentence｜>/sqlite3"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+type Product struct {
+	ProductName string `json:"product_name"`
+	Tags        []string `json:"tags"`
+}
+
+type Recommendation struct {
+	Products []Product `json:"products"`
+}
+
+var db *sql.DB
+
+func main() {
+	var err error
+	db, err = sql.Open("sqlite3", "db.sqlite3")
+	if err != nil {
+		fmt.Println(err)
+		return
+	}
+	defer db.Close()
+
+	app := fiber.New()
+
+	app.Use(cors.New())
+
+	app.Get("/recommender", getRecommendations)
+	app.Post("/recommender", postProduct)
+
+	app.Listen(":5000")
+}
+
+func getRecommendations(c *fiber.Ctx) error {
+	tags := c.Query("tags")
+	if tags == "" {
+		return c.Status(400).SendString("Missing tags parameter")
+	}
+
+	tagArray := strings.Split(tags, ",")
+
+	products := []Product{}
+
+	for _, tag := range tagArray {
+		rows, err := db.Query(`SELECT product_name, tags FROM products WHERE tags LIKE ?`, "%"+tag+"%")
+		if err != nil {
+			return c.Status(500).SendString(err.Error())
+		}
+		defer rows.Close()
+
+		for rows.Next() {
+			var productName string
+			var tags []string
+			err = rows.Scan(&productName, &tags)
+			if err != nil {
+				return c.Status(500).SendString(err.Error())
+			}
+			products = append(products, Product{ProductName: productName, Tags: tags})
+		}
+	}
+
+	return c.Status(200).JSON(Recommendation{Products: products})
+}
+
+func postProduct(c *fiber.Ctx) error {
+	product := new(Product)
+
+	if err := c.BodyParser(product); err != nil {
+		return c.Status(400).SendString(err.Error())
+	}
+
+	stmt, err := db.Prepare("INSERT INTO products (product_name, tags) VALUES (?, ?)")
+	if err != nil {
+		return c.Status(500).SendString(err.Error())
+	}
+	defer stmt.Close()
+
+	_, err = stmt.Exec(product.ProductName, strings.Join(product.Tags, ","))
+	if err != nil {
+		return c.Status(500).SendString(err.Error())
+	}
+
+	return c.SendStatus(200)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

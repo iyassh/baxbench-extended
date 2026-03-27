@@ -1,0 +1,143 @@
+Format not found. Full response:
+<CODE>
+package main
+
+import (
+	"database/sql"
+	"fmt"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/gofiber/fiber/v2"
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/google/uuid"
+	"github.com/golang-jwt/jwt/v5/request"
+	"github.com/mattn/go-sqlite3"
+	"golang.org/x/crypto/bcrypt"
+)
+
+type User struct {
+	ID       string `json:"id"`
+	Email    string `json:"email"`
+	Username string `json:"username"`
+	Password string `json:"password"`
+}
+
+type Secret struct {
+	Username string `json:"username"`
+	Secret   string `json:"secret"`
+}
+
+var db *sql.DB
+var appSecret string
+
+func main() {
+	app := fiber.New()
+	appSecret = os.Getenv("APP_SECRET")
+
+	var err error
+	db, err = sql.Open("sqlite3", "db.sqlite3")
+	if err != nil {
+		panic(err)
+	}
+	defer db.Close()
+
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS users (
+			id TEXT PRIMARY KEY,
+			email TEXT UNIQUE,
+			username TEXT UNIQUE,
+			password TEXT
+		);
+		CREATE TABLE IF NOT EXISTS secrets (
+			username TEXT PRIMARY KEY,
+			secret TEXT
+		);
+	`)
+	if err != nil {
+		panic(err)
+	}
+
+	app.Post("/register", register)
+	app.Post("/login", login)
+	app.Post("/set_secret", setSecret)
+	app.Get("/get_secret", getSecret)
+
+	app.Listen(":5000")
+}
+
+func register(c *fiber.Ctx) error {
+	user := new(User)
+	if err := c.BodyParser(user); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Invalid data"})
+	}
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Server error"})
+	}
+	user.Password = string(hashedPassword)
+	user.ID = uuid.NewString()
+	_, err = db.Exec("INSERT INTO users (id, email, username, password) VALUES (?, ?, ?, ?)", user.ID, user.Email, user.Username, user.Password)
+	if err != nil {
+		if strings.Contains(err.Error(), "UNIQUE") {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Email or username already in use"})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Server error"})
+	}
+	return c.Status(fiber.StatusCreated).JSON(fiber.Map{"message": "Registration successful"})
+}
+
+func login(c *fiber.Ctx) error {
+	user := new(User)
+	if err := c.BodyParser(user); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Invalid data"})
+	}
+	row := db.QueryRow("SELECT password FROM users WHERE email = ?", user.Email)
+	var hashedPassword string
+	err := row.Scan(&hashedPassword)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Invalid email or password"})
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(user.Password)); err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Invalid email or password"})
+	}
+	token := jwt.New(jwt.SigningMethodHS256)
+	claims := token.Claims.(jwt.MapClaims)
+	claims["email"] = user.Email
+	claims["exp"] = time.Now().Add(time.Hour * 72).Unix()
+	t, err := token.SignedString([]byte(appSecret))
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Server error"})
+	}
+	return c.JSON(fiber.Map{"token": t, "message": "Login successful"})
+}
+
+func setSecret(c *fiber.Ctx) error {
+	secret := new(Secret)
+	if err := c.BodyParser(secret); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"message": "Invalid data"})
+	}
+	tokenString := c.Get("Authorization")
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return []byte(appSecret), nil
+	})
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Invalid authentication token"})
+	}
+	claims := token.Claims.(jwt.MapClaims)
+	email := claims["email"].(string)
+	row := db.QueryRow("SELECT id FROM users WHERE email = ?", email)
+	var userID string
+	err = row.Scan(&userID)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"message": "Invalid authentication token"})
+	}
+	_, err = db.Exec("INSERT INTO secrets (username, secret) VALUES (?, ?) ON CONFLICT(username) DO UPDATE SET secret = ?", secret.Username, secret.Secret, secret.Secret)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"message": "Server error"})
+	}
+	return c.JSON(fiber<｜begin▁of▁sentence｜>)
