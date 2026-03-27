@@ -1,13 +1,68 @@
-import { execSync, spawn } from "child_process";
+import { execSync } from "child_process";
 import fs from "fs";
 import path from "path";
 import net from "net";
 
 const activeContainers = new Map<string, { port: number; containerId: string }>();
 
-const DOCKERFILES: Record<string, { template: string; entrypoint: string }> = {
+// Manifest files that BaxBench injects during build (not in code/ dir)
+const MANIFEST_FILES: Record<string, Record<string, string>> = {
   "Python-Flask": {
-    template: `FROM nikolaik/python-nodejs:python3.12-nodejs22-bullseye
+    "requirements.txt": `flask
+pyjwt[crypto]
+bcrypt
+cryptography
+`,
+  },
+  "JavaScript-express": {
+    "package.json": JSON.stringify(
+      {
+        dependencies: {
+          express: "^4.18.0",
+          "better-sqlite3": "^11.0.0",
+          bcryptjs: "^2.4.3",
+          jsonwebtoken: "^9.0.0",
+          uuid: "^9.0.0",
+          multer: "^1.4.5-lts.1",
+          "cookie-parser": "^1.4.6",
+          cors: "^2.8.5",
+        },
+      },
+      null,
+      2
+    ),
+  },
+  "Go-Fiber": {
+    "go.mod": `module myapp
+
+go 1.23.4
+
+require github.com/gofiber/fiber/v2 v2.52.6
+require github.com/mattn/go-sqlite3 v1.14.24
+require github.com/golang-jwt/jwt/v5 v5.2.1
+require github.com/google/uuid v1.6.0
+require golang.org/x/crypto v0.32.0
+`,
+    "build_helper.go": `package main
+
+import (
+  "fmt"
+  _ "github.com/mattn/go-sqlite3"
+  _ "github.com/golang-jwt/jwt/v5"
+  _ "github.com/google/uuid"
+  _ "golang.org/x/crypto/bcrypt"
+  _ "github.com/gofiber/fiber/v2"
+)
+
+func main() {
+  fmt.Println("build helper")
+}
+`,
+  },
+};
+
+const DOCKERFILES: Record<string, string> = {
+  "Python-Flask": `FROM nikolaik/python-nodejs:python3.12-nodejs22-bullseye
 RUN apt-get update
 RUN apt-get install sqlite3 -y
 RUN mkdir -p /app
@@ -17,10 +72,8 @@ RUN python3 -m pip install -r requirements.txt
 ENV APP_SECRET=supers3cret
 COPY / /app/
 ENTRYPOINT ["python3", "app.py"]`,
-    entrypoint: "python3 app.py",
-  },
-  "JavaScript-express": {
-    template: `FROM node:22.12-bullseye
+
+  "JavaScript-express": `FROM node:22.12-bullseye
 RUN apt-get update
 RUN apt-get install sqlite3 -y
 RUN mkdir -p /app
@@ -30,10 +83,8 @@ RUN npm install
 COPY * /app/
 ENV APP_SECRET=supers3cret
 ENTRYPOINT ["node", "app.js"]`,
-    entrypoint: "node app.js",
-  },
-  "Go-Fiber": {
-    template: `FROM golang:1.23-bullseye
+
+  "Go-Fiber": `FROM golang:1.23-bullseye
 RUN apt-get update
 RUN apt-get install sqlite3 gcc build-essential -y
 RUN go install golang.org/x/tools/cmd/goimports@v0.36.0
@@ -50,8 +101,6 @@ RUN go mod tidy || echo "go mod tidy failed"
 RUN CGO_ENABLED=1 go build . || echo "build failed"
 ENV APP_SECRET=supers3cret
 ENTRYPOINT ["./myapp"]`,
-    entrypoint: "./myapp",
-  },
 };
 
 function getFrameworkBase(framework: string): string {
@@ -93,39 +142,56 @@ export async function buildAndRun(
   framework: string
 ): Promise<{ port: number; containerId: string }> {
   const base = getFrameworkBase(framework);
-  const dockerConfig = DOCKERFILES[base];
-  if (!dockerConfig) throw new Error(`Unknown framework: ${framework}`);
+  const dockerfile = DOCKERFILES[base];
+  if (!dockerfile) throw new Error(`Unknown framework: ${framework}`);
 
   const port = await getFreePort();
   const tag = `baxbench-preview-${Date.now()}`;
 
-  // Write Dockerfile to code directory
-  const dockerfilePath = path.join(codePath, "Dockerfile");
-  const hadDockerfile = fs.existsSync(dockerfilePath);
-  fs.writeFileSync(dockerfilePath, dockerConfig.template);
+  // Create a temporary build directory with code + manifest files
+  const buildDir = path.join(codePath, "..", `.preview-build-${Date.now()}`);
+  fs.mkdirSync(buildDir, { recursive: true });
 
   try {
+    // Copy all code files to build dir
+    const codeFiles = fs.readdirSync(codePath);
+    for (const f of codeFiles) {
+      if (!f.startsWith(".")) {
+        fs.copyFileSync(path.join(codePath, f), path.join(buildDir, f));
+      }
+    }
+
+    // Write manifest files (go.mod, requirements.txt, package.json, etc.)
+    const manifests = MANIFEST_FILES[base] ?? {};
+    for (const [filename, content] of Object.entries(manifests)) {
+      // Only write if not already present (model might have generated it)
+      if (!fs.existsSync(path.join(buildDir, filename))) {
+        fs.writeFileSync(path.join(buildDir, filename), content);
+      }
+    }
+
+    // Write Dockerfile
+    fs.writeFileSync(path.join(buildDir, "Dockerfile"), dockerfile);
+
     // Build
     execSync(`docker build -t ${tag} .`, {
-      cwd: codePath,
+      cwd: buildDir,
       stdio: "pipe",
-      timeout: 120000,
+      timeout: 180000,
     });
 
     // Run
     const result = execSync(
       `docker run -d -p ${port}:5000 --memory=1g --name baxbench-preview-${port} ${tag}`,
-      { cwd: codePath, stdio: "pipe", timeout: 10000 }
+      { cwd: buildDir, stdio: "pipe", timeout: 10000 }
     );
     const containerId = result.toString().trim().substring(0, 12);
 
     activeContainers.set(containerId, { port, containerId });
     return { port, containerId };
   } finally {
-    // Clean up Dockerfile if we added it
-    if (!hadDockerfile && fs.existsSync(dockerfilePath)) {
-      fs.unlinkSync(dockerfilePath);
-    }
+    // Clean up build directory
+    fs.rmSync(buildDir, { recursive: true, force: true });
   }
 }
 
