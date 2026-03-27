@@ -44,7 +44,7 @@ for MODEL in "codellama:7b" "qwen2.5-coder:7b" "mistral:7b"; do
     echo "--- GENERATION PHASE: $MODEL (Ollama ON, Docker idle) ---"
     for SAFETY in $SAFETY_PROMPTS; do
         echo "  Generating safety_prompt=$SAFETY at $(date)"
-        if cd /Users/deepanshsharma/baxbench-extended && /opt/homebrew/bin/python3.12 src/main.py \
+        if cd /Users/deepanshsharma/baxbench-extended && python3 src/main.py \
             --models "$MODEL" \
             --mode generate \
             --ollama \
@@ -73,7 +73,7 @@ for MODEL in "codellama:7b" "qwen2.5-coder:7b" "mistral:7b"; do
     echo "--- TEST PHASE: $MODEL (Ollama OFF, Docker active) ---"
     for SAFETY in $SAFETY_PROMPTS; do
         echo "  Testing safety_prompt=$SAFETY at $(date)"
-        if cd /Users/deepanshsharma/baxbench-extended && /opt/homebrew/bin/python3.12 src/main.py \
+        if cd /Users/deepanshsharma/baxbench-extended && python3 src/main.py \
             --models "$MODEL" \
             --mode test \
             --safety_prompt "$SAFETY" \
@@ -103,7 +103,7 @@ echo "========================================"
 echo "Loading results into database..."
 echo "========================================"
 cd /Users/deepanshsharma/baxbench-extended
-if /opt/homebrew/bin/python3.12 scripts/load_results_db.py; then
+if python3 scripts/load_results_db.py; then
     echo "Database load: SUCCESS"
 else
     echo "Database load: FAILED"
