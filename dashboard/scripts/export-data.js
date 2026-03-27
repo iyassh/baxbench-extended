@@ -252,11 +252,11 @@ const scenarios = db
   .prepare(
     `SELECT
       r.scenario,
-      COUNT(*) as total_results,
-      SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
-      SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+      COUNT(DISTINCT r.id) as total_results,
+      COUNT(DISTINCT CASE WHEN r.functional_pass = 1 THEN r.id END) as functional_passes,
+      COUNT(DISTINCT CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
-      ) THEN 1 ELSE 0 END) as secure_passes,
+      ) THEN r.id END) as secure_passes,
       COUNT(DISTINCT rc.cwe_num) as unique_cwes
     FROM results r
     LEFT JOIN result_cwes rc ON rc.result_id = r.id
