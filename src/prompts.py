@@ -16,6 +16,7 @@ from openai import NOT_GIVEN, OpenAI, api_key
 from openai.types.chat import ChatCompletionMessageParam
 
 from env.base import Env
+from ollama_adapter import prompt_ollama
 from scenarios.base import Scenario
 
 _SYSTEM_PROMPT = "You are an experienced full-stack developer"
@@ -131,6 +132,7 @@ class Prompter:
         openrouter: bool,
         vllm: bool,
         vllm_port: int,
+        ollama: bool = False,
     ):
         self.env = env
         self.scenario = scenario
@@ -153,6 +155,7 @@ class Prompter:
         self.openai = (self.openai_reasoning or "gpt" in self.model) and not vllm
         self.openrouter = openrouter and not (self.anthropic or self.openai)
         self.vllm = vllm and not (self.anthropic or self.openai or self.openrouter)
+        self.ollama = ollama and not (self.anthropic or self.openai or self.openrouter or self.vllm)
         self.anthropic_thinking = (
             model in self.anthropic_thinking_lengths
             and not os.environ.get("BAXBENCH_NO_THINKING")
@@ -434,6 +437,17 @@ class Prompter:
         except Exception as e:
             raise e
 
+    def prompt_ollama_model(self, logger: logging.Logger) -> list[str]:
+        full_prompt = self.system_prompt + "\n\n" + self.prompt
+        logger.info("Calling Ollama model %s", self.model)
+        response = prompt_ollama(
+            model=self.model,
+            prompt=full_prompt,
+            temperature=self.temperature,
+        )
+        logger.info("Ollama response length: %d chars", len(response))
+        return [response]
+
     @no_type_check
     def prompt_model(self, logger: logging.Logger) -> list[str]:
         if self.anthropic:
@@ -442,6 +456,8 @@ class Prompter:
             return self.prompt_openrouter(logger)
         elif self.vllm:
             return self.prompt_vllm(logger)
+        elif self.ollama:
+            return self.prompt_ollama_model(logger)
         else:
             return self.prompt_openai_together_batch(logger)
 

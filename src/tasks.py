@@ -79,10 +79,13 @@ class ContainerRunner:
     def __exit__(self, exc_type, exc_val, exc_tb) -> None:  # type: ignore[no-untyped-def]
         assert self.container is not None
         assert self._port is not None
-        container_logs = cast(
-            bytes, self.container.logs(stdout=True, stderr=True, follow=False)
-        )
-        self.logger.info("container logs:\n%s", container_logs.decode())
+        try:
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as _ex:
+                _fut = _ex.submit(self.container.logs, stdout=True, stderr=True, follow=False)
+                container_logs = cast(bytes, _fut.result(timeout=30))
+            self.logger.info("container logs:\n%s", container_logs.decode())
+        except Exception as e:
+            self.logger.warning("Could not retrieve container logs (timeout or error): %s", e)
         self.container.remove(force=True)
         self.port_manager.release_slot(self._port)
         self.logger.info("-" * 100)
@@ -111,6 +114,7 @@ class Task:
     safety_prompt: str
     openrouter: bool
     vllm: bool
+    ollama: bool = False
 
     @property
     def id(self) -> str:
@@ -213,6 +217,7 @@ class Task:
         openrouter: bool,
         vllm: bool,
         vllm_port: int,
+        ollama: bool = False,
     ) -> None:
         # check if there are already some results generated
         last_sample = -1
@@ -276,6 +281,7 @@ class Task:
                 openrouter=openrouter,
                 vllm=vllm,
                 vllm_port=vllm_port,
+                ollama=ollama,
             )
             logger.info("built prompt:\n%s", prompter.prompt)
             logger.info("-" * 100)
@@ -672,6 +678,7 @@ class TaskHandler:
         openrouter: bool,
         vllm: bool,
         vllm_port: int,
+        ollama: bool = False,
     ) -> list[int]:
         with tqdm.tqdm(total=len(self.tasks)) as pbar:
             pbar.get_lock()  # type: ignore[no-untyped-call]
@@ -688,6 +695,7 @@ class TaskHandler:
                     skip_failed=skip_failed,
                     vllm=vllm,
                     vllm_port=vllm_port,
+                    ollama=ollama,
                 )
                 with pbar.get_lock():  # type: ignore[no-untyped-call]
                     pbar.update(1)

@@ -11,7 +11,13 @@ import docker
 import docker.errors
 from docker.models.containers import Container
 
-_docker_client = docker.from_env()
+_docker_client = None
+
+def _get_docker_client():
+    global _docker_client
+    if _docker_client is None:
+        _docker_client = docker.from_env()
+    return _docker_client
 
 
 type DatabaseTest = Callable[[str], bool]
@@ -118,7 +124,7 @@ class Env:
         tag = f"baxbench_{lang}_{frw}".lower()
         logger.info("Files copied, building the image")
         logger.info("-" * 100)
-        r = _docker_client.images.build(
+        r = _get_docker_client().images.build(
             fileobj=tar_stream,
             nocache=no_cache,
             custom_context=True,
@@ -137,7 +143,7 @@ class Env:
         uid = uuid.uuid4()
         return cast(
             Container,
-            _docker_client.containers.run(
+            _get_docker_client().containers.run(
                 image_id,
                 name=f"baxbench-{uid}",
                 detach=True,
@@ -150,8 +156,7 @@ class Env:
 
     def process_still_running(self, container_id: str, logger: logging.Logger) -> bool:
         # extract command that started container process
-        _docker_client = docker.from_env()
-        container: Container = _docker_client.containers.get(container_id)
+        container: Container = _get_docker_client().containers.get(container_id)
         logger.info(f"Checking if process is still running: {self.entrypoint_cmd}")
         # log into container and check if process is still running
         try:
