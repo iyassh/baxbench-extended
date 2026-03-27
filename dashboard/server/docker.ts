@@ -177,9 +177,13 @@ export async function buildAndRun(
     // Write Dockerfile
     fs.writeFileSync(path.join(buildDir, "Dockerfile"), dockerfile);
 
-    // Build
-    execSync(`docker build -t ${tag} .`, {
-      cwd: buildDir,
+    // Verify files before build
+    const buildFiles = fs.readdirSync(buildDir);
+    console.log(`[preview] Build dir: ${buildDir}`);
+    console.log(`[preview] Files: ${buildFiles.join(", ")}`);
+
+    // Build using absolute path (cwd alone can fail with tsx/Node child_process)
+    execSync(`docker build --no-cache -t ${tag} "${buildDir}"`, {
       stdio: "pipe",
       timeout: 180000,
     });
