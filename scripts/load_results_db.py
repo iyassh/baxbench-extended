@@ -37,6 +37,8 @@ MODEL_CONFIGS = [
     {"name": "sonnet-4.6-thinking", "model": "claude-sonnet-4-6", "thinking": True},
     {"name": "haiku-4.5-standard", "model": "claude-haiku-4-5-20251001", "thinking": False},
     {"name": "haiku-4.5-thinking", "model": "claude-haiku-4-5-20251001", "thinking": True},
+    # Ollama models (free local)
+    {"name": "deepseek-coder-6.7b-ollama", "model": "deepseek-coder:6.7b", "thinking": False},
     # OpenRouter models (free cloud)
     {"name": "meta-llama-llama-3.3-70b-instruct-openrouter", "model": "meta-llama-llama-3.3-70b-instruct", "thinking": False},
     {"name": "mistralai-mistral-small-3.1-24b-instruct-openrouter", "model": "mistralai-mistral-small-3.1-24b-instruct", "thinking": False},
