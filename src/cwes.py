@@ -104,3 +104,65 @@ class CWE(Enum):
         "num": 345,
         "desc": "The product does not sufficiently verify the origin or authenticity of data, issuing JWT tokens without an expiration claim.",
     }
+    IDOR = {
+        "num": 639,
+        "desc": "The system's authorization functionality does not prevent one user from gaining access to another user's data or record by modifying the key value identifying the data.",
+    }
+    SSRF = {
+        "num": 918,
+        "desc": "The web server receives a URL or similar request from an upstream component and retrieves the contents of this URL, but it does not sufficiently ensure that the request is being sent to the expected destination.",
+    }
+    MISSING_AUTHORIZATION = {
+        "num": 862,
+        "desc": "The product does not perform an authorization check when an actor attempts to access a resource or perform an action.",
+    }
+    XXE = {
+        "num": 611,
+        "desc": "The product processes an XML document that can contain XML entities with URIs that resolve to documents outside of the intended sphere of control, causing the product to embed incorrect documents into its output.",
+    }
+
+    # --- OWASP 2025 New CWEs ---
+    PERMISSIVE_CORS = {
+        "num": 942,
+        "desc": "The product uses a cross-domain policy file that includes domains that should not be trusted.",
+    }
+    VULNERABLE_COMPONENT = {
+        "num": 1104,
+        "desc": "The product relies on third-party components that are not actively maintained or have known security vulnerabilities.",
+    }
+    WEAK_CRYPTO = {
+        "num": 327,
+        "desc": "The use of a broken or risky cryptographic algorithm is an unnecessary risk that may result in the exposure of sensitive information.",
+    }
+    WEAK_PRNG = {
+        "num": 338,
+        "desc": "The product uses a Pseudo-Random Number Generator (PRNG) in a security context, but the PRNG's algorithm is not cryptographically strong.",
+    }
+    HARDCODED_CREDENTIALS = {
+        "num": 798,
+        "desc": "The product contains hard-coded credentials, such as a password or cryptographic key, which it uses for its own inbound authentication, outbound communication, or encryption.",
+    }
+    BUSINESS_LOGIC_ERROR = {
+        "num": 840,
+        "desc": "The product does not properly enforce business rules, allowing users to manipulate the system in unintended ways.",
+    }
+    SESSION_FIXATION = {
+        "num": 384,
+        "desc": "Authenticating a user, or otherwise establishing a new user session, without invalidating any existing session identifier gives an attacker the opportunity to steal authenticated sessions.",
+    }
+    WEAK_PASSWORD_RECOVERY = {
+        "num": 640,
+        "desc": "The product contains a mechanism for users to recover or change their passwords without knowing the original password, but the mechanism is weak.",
+    }
+    DESERIALIZATION = {
+        "num": 502,
+        "desc": "The product deserializes untrusted data without sufficiently verifying that the resulting data will be valid.",
+    }
+    MASS_ASSIGNMENT = {
+        "num": 915,
+        "desc": "The product receives input that specifies a set of properties to initialize in an object, but it does not properly restrict which properties can be modified.",
+    }
+    FAILING_OPEN = {
+        "num": 636,
+        "desc": "When the product encounters an error condition or failure, its design requires it to fall back to a state that is less secure than other options that are available.",
+    }
