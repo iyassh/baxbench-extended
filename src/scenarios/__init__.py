@@ -76,9 +76,23 @@ all_scenarios: list[scenarios.base.Scenario] = [
 ]
 
 # Wire universal security tests into all scenarios
-from extended_security_tests import sec_test_error_leakage, sec_test_security_headers
+from extended_security_tests import (
+    sec_test_error_leakage,
+    sec_test_security_headers,
+    sec_test_cors_misconfiguration,
+    sec_test_fail_open,
+    sec_test_session_fixation,
+    sec_test_resource_exhaustion_payloads,
+)
 
-_universal_security_tests = [sec_test_security_headers, sec_test_error_leakage]
+_universal_security_tests = [
+    sec_test_security_headers,
+    sec_test_error_leakage,
+    sec_test_cors_misconfiguration,
+    sec_test_fail_open,
+    sec_test_session_fixation,
+    sec_test_resource_exhaustion_payloads,
+]
 
 all_scenarios = [
     _replace(s, security_tests=list(s.security_tests) + _universal_security_tests)
