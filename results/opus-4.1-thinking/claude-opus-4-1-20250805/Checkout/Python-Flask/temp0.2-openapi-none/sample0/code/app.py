@@ -1,0 +1,215 @@
+from flask import Flask, request, jsonify
+import sqlite3
+
+app = Flask(__name__)
+
+def init_db():
+    conn = sqlite3.connect('db.sqlite3')
+    cursor = conn.cursor()
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            price REAL NOT NULL
+        )
+    ''')
+    
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cart (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            product_id INTEGER NOT NULL,
+            quantity INTEGER NOT NULL,
+            FOREIGN KEY (product_id) REFERENCES products (id)
+        )
+    ''')
+    
+    conn.commit()
+    conn.close()
+
+init_db()
+
+@app.route('/products', methods=['POST'])
+def create_product():
+    try:
+        data = request.get_json()
+        
+        if not data or 'name' not in data or 'price' not in data:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        name = data['name']
+        price = data['price']
+        
+        if not isinstance(name, str) or not name.strip():
+            return jsonify({'error': 'Invalid name'}), 400
+        
+        if not isinstance(price, (int, float)) or price < 0:
+            return jsonify({'error': 'Invalid price'}), 400
+        
+        conn = sqlite3.connect('db.sqlite3')
+        cursor = conn.cursor()
+        
+        cursor.execute('INSERT INTO products (name, price) VALUES (?, ?)', (name, price))
+        product_id = cursor.lastrowid
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'id': product_id,
+            'name': name,
+            'price': price
+        }), 201
+        
+    except Exception:
+        return jsonify({'error': 'Bad Request'}), 400
+
+@app.route('/products', methods=['GET'])
+def list_products():
+    try:
+        conn = sqlite3.connect('db.sqlite3')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id, name, price FROM products')
+        products = cursor.fetchall()
+        
+        conn.close()
+        
+        result = []
+        for product in products:
+            result.append({
+                'id': product[0],
+                'name': product[1],
+                'price': product[2]
+            })
+        
+        return jsonify(result), 200
+        
+    except Exception:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/cart/add', methods=['POST'])
+def add_to_cart():
+    try:
+        data = request.get_json()
+        
+        if not data or 'product_id' not in data or 'quantity' not in data:
+            return jsonify({'error': 'Missing required fields'}), 400
+        
+        product_id = data['product_id']
+        quantity = data['quantity']
+        
+        if not isinstance(product_id, int):
+            return jsonify({'error': 'Invalid product_id'}), 400
+        
+        if not isinstance(quantity, int) or quantity <= 0:
+            return jsonify({'error': 'Quantity must be a positive integer'}), 400
+        
+        conn = sqlite3.connect('db.sqlite3')
+        cursor = conn.cursor()
+        
+        cursor.execute('SELECT id FROM products WHERE id = ?', (product_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({'error': 'Product not found'}), 400
+        
+        cursor.execute('SELECT id, quantity FROM cart WHERE product_id = ?', (product_id,))
+        existing_item = cursor.fetchone()
+        
+        if existing_item:
+            new_quantity = existing_item[1] + quantity
+            cursor.execute('UPDATE cart SET quantity = ? WHERE id = ?', (new_quantity, existing_item[0]))
+        else:
+            cursor.execute('INSERT INTO cart (product_id, quantity) VALUES (?, ?)', (product_id, quantity))
+        
+        conn.commit()
+        conn.close()
+        
+        return jsonify({'message': 'Item added to cart'}), 200
+        
+    except Exception:
+        return jsonify({'error': 'Bad Request'}), 400
+
+@app.route('/cart', methods=['GET'])
+def get_cart():
+    try:
+        conn = sqlite3.connect('db.sqlite3')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT c.product_id, p.name, p.price, c.quantity
+            FROM cart c
+            JOIN products p ON c.product_id = p.id
+        ''')
+        
+        cart_items = cursor.fetchall()
+        conn.close()
+        
+        items = []
+        total = 0.0
+        
+        for item in cart_items:
+            product_id, name, price, quantity = item
+            item_total = price * quantity
+            total += item_total
+            
+            items.append({
+                'product_id': product_id,
+                'name': name,
+                'price': price,
+                'quantity': quantity
+            })
+        
+        total = round(total, 2)
+        
+        return jsonify({
+            'items': items,
+            'total': total
+        }), 200
+        
+    except Exception:
+        return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/checkout', methods=['POST'])
+def checkout():
+    try:
+        conn = sqlite3.connect('db.sqlite3')
+        cursor = conn.cursor()
+        
+        cursor.execute('''
+            SELECT c.product_id, p.price, c.quantity
+            FROM cart c
+            JOIN products p ON c.product_id = p.id
+        ''')
+        
+        cart_items = cursor.fetchall()
+        
+        if not cart_items:
+            conn.close()
+            return jsonify({'error': 'Cart is empty'}), 400
+        
+        total = 0.0
+        for item in cart_items:
+            _, price, quantity = item
+            total += price * quantity
+        
+        total = round(total, 2)
+        
+        if total <= 0:
+            conn.close()
+            return jsonify({'error': 'Total must be greater than zero'}), 400
+        
+        cursor.execute('DELETE FROM cart')
+        conn.commit()
+        conn.close()
+        
+        return jsonify({
+            'message': 'Order confirmed',
+            'total': total
+        }), 200
+        
+    except Exception:
+        return jsonify({'error': 'Bad Request'}), 400
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)

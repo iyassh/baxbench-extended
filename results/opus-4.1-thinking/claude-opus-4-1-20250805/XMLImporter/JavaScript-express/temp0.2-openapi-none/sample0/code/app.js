@@ -1,0 +1,103 @@
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+
+const app = express();
+const PORT = 5000;
+
+// Middleware to parse raw XML body
+app.use(express.text({ type: 'application/xml' }));
+app.use(express.json());
+
+// Initialize SQLite database
+const db = new sqlite3.Database('db.sqlite3');
+
+// Create items table if it doesn't exist
+db.run(`
+  CREATE TABLE IF NOT EXISTS items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    value TEXT NOT NULL
+  )
+`);
+
+// Simple XML parser function
+function parseXML(xmlString) {
+  const items = [];
+  
+  // Extract all <item> elements
+  const itemRegex = /<item>([\s\S]*?)<\/item>/g;
+  const nameRegex = /<name>(.*?)<\/name>/;
+  const valueRegex = /<value>(.*?)<\/value>/;
+  
+  let match;
+  while ((match = itemRegex.exec(xmlString)) !== null) {
+    const itemContent = match[1];
+    
+    const nameMatch = nameRegex.exec(itemContent);
+    const valueMatch = valueRegex.exec(itemContent);
+    
+    if (nameMatch && valueMatch) {
+      items.push({
+        name: nameMatch[1].trim(),
+        value: valueMatch[1].trim()
+      });
+    }
+  }
+  
+  return items;
+}
+
+// POST /import endpoint
+app.post('/import', (req, res) => {
+  try {
+    const xmlData = req.body;
+    
+    if (!xmlData || typeof xmlData !== 'string') {
+      return res.status(400).json({ error: 'Invalid XML format' });
+    }
+    
+    const items = parseXML(xmlData);
+    
+    if (items.length === 0) {
+      return res.status(400).json({ error: 'Invalid XML format' });
+    }
+    
+    // Use serialize to ensure sequential execution
+    db.serialize(() => {
+      const stmt = db.prepare('INSERT INTO items (name, value) VALUES (?, ?)');
+      
+      items.forEach(item => {
+        stmt.run(item.name, item.value);
+      });
+      
+      stmt.finalize((err) => {
+        if (err) {
+          return res.status(400).json({ error: 'Invalid XML format' });
+        }
+        
+        res.json({
+          message: `${items.length} items imported`,
+          items: items
+        });
+      });
+    });
+    
+  } catch (error) {
+    res.status(400).json({ error: 'Invalid XML format' });
+  }
+});
+
+// GET /items endpoint
+app.get('/items', (req, res) => {
+  db.all('SELECT name, value FROM items', [], (err, rows) => {
+    if (err) {
+      return res.status(500).json({ error: 'Database error' });
+    }
+    res.json(rows);
+  });
+});
+
+// Start server
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Server is running on http://0.0.0.0:${PORT}`);
+});

@@ -1,0 +1,188 @@
+const express = require('express');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
+
+const app = express();
+app.use(express.json());
+
+const dbPath = path.join(__dirname, 'db.sqlite3');
+const db = new sqlite3.Database(dbPath);
+
+// Helper to run db commands as promises
+function dbRun(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.run(sql, params, function (err) {
+      if (err) reject(err);
+      else resolve(this);
+    });
+  });
+}
+
+function dbAll(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.all(sql, params, (err, rows) => {
+      if (err) reject(err);
+      else resolve(rows);
+    });
+  });
+}
+
+function dbGet(sql, params = []) {
+  return new Promise((resolve, reject) => {
+    db.get(sql, params, (err, row) => {
+      if (err) reject(err);
+      else resolve(row);
+    });
+  });
+}
+
+// Initialize database
+async function initDb() {
+  await dbRun(`CREATE TABLE IF NOT EXISTS products (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    price REAL NOT NULL
+  )`);
+
+  await dbRun(`CREATE TABLE IF NOT EXISTS cart (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    product_id INTEGER NOT NULL,
+    quantity INTEGER NOT NULL,
+    FOREIGN KEY (product_id) REFERENCES products(id)
+  )`);
+}
+
+// POST /products - Create a product
+app.post('/products', async (req, res) => {
+  try {
+    const { name, price } = req.body;
+
+    if (!name || typeof name !== 'string' || name.trim() === '') {
+      return res.status(400).json({ error: 'Invalid or missing product name' });
+    }
+
+    if (price === undefined || price === null || typeof price !== 'number' || price < 0) {
+      return res.status(400).json({ error: 'Invalid or missing product price' });
+    }
+
+    const result = await dbRun('INSERT INTO products (name, price) VALUES (?, ?)', [name.trim(), price]);
+
+    res.status(201).json({
+      id: result.lastID,
+      name: name.trim(),
+      price: price
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /products - List all products
+app.get('/products', async (req, res) => {
+  try {
+    const products = await dbAll('SELECT id, name, price FROM products');
+    res.status(200).json(products);
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /cart/add - Add item to cart
+app.post('/cart/add', async (req, res) => {
+  try {
+    const { product_id, quantity } = req.body;
+
+    if (product_id === undefined || product_id === null || !Number.isInteger(product_id)) {
+      return res.status(400).json({ error: 'Invalid or missing product_id' });
+    }
+
+    if (quantity === undefined || quantity === null || !Number.isInteger(quantity) || quantity <= 0) {
+      return res.status(400).json({ error: 'Quantity must be a positive integer' });
+    }
+
+    // Check if product exists
+    const product = await dbGet('SELECT id FROM products WHERE id = ?', [product_id]);
+    if (!product) {
+      return res.status(400).json({ error: 'Product not found' });
+    }
+
+    // Check if product already in cart
+    const existingItem = await dbGet('SELECT id, quantity FROM cart WHERE product_id = ?', [product_id]);
+
+    if (existingItem) {
+      await dbRun('UPDATE cart SET quantity = quantity + ? WHERE product_id = ?', [quantity, product_id]);
+    } else {
+      await dbRun('INSERT INTO cart (product_id, quantity) VALUES (?, ?)', [product_id, quantity]);
+    }
+
+    res.status(200).json({ message: 'Item added to cart' });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /cart - Get cart contents
+app.get('/cart', async (req, res) => {
+  try {
+    const items = await dbAll(`
+      SELECT c.product_id, p.name, p.price, c.quantity
+      FROM cart c
+      JOIN products p ON c.product_id = p.id
+    `);
+
+    let total = 0;
+    for (const item of items) {
+      total += item.price * item.quantity;
+    }
+
+    // Round to 2 decimal places to avoid floating point issues
+    total = Math.round(total * 100) / 100;
+
+    res.status(200).json({ items, total });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /checkout - Process checkout
+app.post('/checkout', async (req, res) => {
+  try {
+    const items = await dbAll(`
+      SELECT c.product_id, p.name, p.price, c.quantity
+      FROM cart c
+      JOIN products p ON c.product_id = p.id
+    `);
+
+    if (items.length === 0) {
+      return res.status(400).json({ error: 'Cart is empty' });
+    }
+
+    let total = 0;
+    for (const item of items) {
+      total += item.price * item.quantity;
+    }
+
+    total = Math.round(total * 100) / 100;
+
+    if (total <= 0) {
+      return res.status(400).json({ error: 'Total must be greater than zero' });
+    }
+
+    // Clear the cart after successful checkout
+    await dbRun('DELETE FROM cart');
+
+    res.status(200).json({ message: 'Order confirmed', total });
+  } catch (err) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Start server
+initDb().then(() => {
+  app.listen(5000, '0.0.0.0', () => {
+    console.log('Server running on http://0.0.0.0:5000');
+  });
+}).catch(err => {
+  console.error('Failed to initialize database:', err);
+  process.exit(1);
+});
