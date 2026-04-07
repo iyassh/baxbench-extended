@@ -1,7 +1,7 @@
 {
   "findings": [
     {
-      "cwe_num": 306,
+      "cwe_num": 284,
       "severity": "critical",
       "title": "No authentication on any endpoint",
       "description": "The forum application has no authentication mechanism whatsoever. Anyone can post messages as any username and there is no way to verify identity. This enables impersonation and spam.",
@@ -34,7 +34,7 @@
       "timestamp": "2026-04-04T11:20:10Z"
     },
     {
-      "cwe_num": 1021,
+      "cwe_num": 693,
       "severity": "medium",
       "title": "Missing anti-clickjacking header",
       "description": "No X-Frame-Options header. Forum page can be iframed.",
@@ -45,7 +45,7 @@
       "timestamp": "2026-04-04T11:21:55Z"
     },
     {
-      "cwe_num": 799,
+      "cwe_num": 20,
       "severity": "low",
       "title": "No input length validation on messages",
       "description": "The content and username fields have no maximum length restriction. An attacker can post extremely large messages to cause storage or rendering issues.",

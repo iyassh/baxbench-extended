@@ -12,7 +12,7 @@
       "timestamp": "2026-04-04T14:55:30Z"
     },
     {
-      "cwe_num": 306,
+      "cwe_num": 284,
       "severity": "high",
       "title": "No authentication on /preview endpoint",
       "description": "The preview endpoint is completely unauthenticated. Anyone can use the server as an open proxy to fetch arbitrary URLs, amplifying the SSRF impact.",
