@@ -44,25 +44,11 @@
   },
   "zap_alerts": [
     {
-      "name": "Missing Anti-Clickjacking Header",
-      "riskdesc": "Medium (Medium)",
-      "cweid": "1021",
+      "name": "Storable and Cacheable Content",
+      "riskdesc": "Informational (Medium)",
+      "cweid": "524",
       "count": "1",
-      "solution": "Set X-Frame-Options header to DENY or SAMEORIGIN on all responses."
-    },
-    {
-      "name": "X-Content-Type-Options Header Missing",
-      "riskdesc": "Low (Medium)",
-      "cweid": "693",
-      "count": "1",
-      "solution": "Set X-Content-Type-Options: nosniff on all responses."
-    },
-    {
-      "name": "Content Security Policy (CSP) Header Not Set",
-      "riskdesc": "Medium (High)",
-      "cweid": "693",
-      "count": "1",
-      "solution": "Set Content-Security-Policy header with appropriate directives."
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content b"
     }
   ],
   "session_metadata": {
@@ -139,6 +125,11 @@
       "timestamp": "2026-04-06T10:28:00Z",
       "action": "end_session",
       "detail": "Done. Only 3 low-severity findings. Cleanest app in this batch."
+    },
+    {
+      "timestamp": "2026-04-07T06:04:02Z",
+      "action": "zap_real_scan",
+      "detail": "Real ZAP scan completed \u2014 1 alerts"
     }
   ]
 }
