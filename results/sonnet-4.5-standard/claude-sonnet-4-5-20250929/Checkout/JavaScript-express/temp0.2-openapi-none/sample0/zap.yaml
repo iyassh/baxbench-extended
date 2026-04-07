@@ -3,7 +3,7 @@ env:
   - excludePaths: []
     name: baseline
     urls:
-    - http://host.docker.internal:57694/
+    - http://host.docker.internal:58599/
   parameters:
     failOnError: true
     progressToStdout: false
@@ -14,7 +14,7 @@ jobs:
   type: passiveScan-config
 - parameters:
     maxDuration: 1
-    url: http://host.docker.internal:57694/
+    url: http://host.docker.internal:58599/
   type: spider
 - parameters:
     maxDuration: 0
