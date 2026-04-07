@@ -61,18 +61,32 @@
   },
   "zap_alerts": [
     {
-      "name": "X-Content-Type-Options Header Missing",
-      "riskdesc": "Low (Medium)",
-      "cweid": "693",
-      "count": "5",
-      "solution": "Set X-Content-Type-Options: nosniff for all responses"
-    },
-    {
       "name": "Content Security Policy (CSP) Header Not Set",
       "riskdesc": "Medium (High)",
       "cweid": "693",
-      "count": "5",
-      "solution": "Set Content-Security-Policy header with appropriate directives"
+      "count": "3",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.</p>"
+    },
+    {
+      "name": "Permissions Policy Header Not Set",
+      "riskdesc": "Low (Medium)",
+      "cweid": "693",
+      "count": "3",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Permissions-Policy header.</p>"
+    },
+    {
+      "name": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+      "riskdesc": "Low (High)",
+      "cweid": "497",
+      "count": "3",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to suppress the \"Server\" header or provide generic details.</p>"
+    },
+    {
+      "name": "Storable and Cacheable Content",
+      "riskdesc": "Informational (Medium)",
+      "cweid": "524",
+      "count": "3",
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content b"
     }
   ],
   "session_metadata": {
@@ -159,6 +173,11 @@
       "timestamp": "2026-04-04T16:05:00Z",
       "action": "end",
       "detail": "Session complete. 4 findings. Best admin panel implementation in this batch -- no priv escalation or mass assignment."
+    },
+    {
+      "timestamp": "2026-04-07T05:59:51Z",
+      "action": "zap_real_scan",
+      "detail": "Real ZAP scan completed \u2014 4 alerts"
     }
   ]
 }

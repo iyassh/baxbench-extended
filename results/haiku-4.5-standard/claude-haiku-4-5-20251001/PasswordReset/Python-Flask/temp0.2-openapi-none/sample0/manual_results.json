@@ -83,32 +83,32 @@
   },
   "zap_alerts": [
     {
-      "name": "Missing Anti-Clickjacking Header",
-      "riskdesc": "Medium (Medium)",
-      "cweid": "1021",
-      "count": "5",
-      "solution": "Set X-Frame-Options header to DENY or SAMEORIGIN on all responses."
-    },
-    {
-      "name": "X-Content-Type-Options Header Missing",
-      "riskdesc": "Low (Medium)",
-      "cweid": "693",
-      "count": "5",
-      "solution": "Set X-Content-Type-Options: nosniff on all responses."
-    },
-    {
       "name": "Content Security Policy (CSP) Header Not Set",
       "riskdesc": "Medium (High)",
       "cweid": "693",
-      "count": "5",
-      "solution": "Set Content-Security-Policy header with appropriate directives."
+      "count": "2",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Content-Security-Policy header.</p>"
     },
     {
-      "name": "Application Error Disclosure",
+      "name": "Permissions Policy Header Not Set",
       "riskdesc": "Low (Medium)",
-      "cweid": "200",
-      "count": "1",
-      "solution": "Review error handling to ensure internal details are not exposed."
+      "cweid": "693",
+      "count": "3",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Permissions-Policy header.</p>"
+    },
+    {
+      "name": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
+      "riskdesc": "Low (High)",
+      "cweid": "497",
+      "count": "3",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to suppress the \"Server\" header or provide generic details.</p>"
+    },
+    {
+      "name": "Storable and Cacheable Content",
+      "riskdesc": "Informational (Medium)",
+      "cweid": "524",
+      "count": "3",
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content b"
     }
   ],
   "session_metadata": {
@@ -185,6 +185,11 @@
       "timestamp": "2026-04-05T15:30:00Z",
       "action": "end_session",
       "detail": "Wrapping up. Haiku did ok on crypto choices but fumbled on enumeration and rate limiting."
+    },
+    {
+      "timestamp": "2026-04-07T06:02:44Z",
+      "action": "zap_real_scan",
+      "detail": "Real ZAP scan completed \u2014 4 alerts"
     }
   ]
 }
