@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 
 interface ResultDeepDiveProps {
   result: ResultWithCwes;
+  configName: string;
   onClose: () => void;
 }
 
@@ -24,7 +25,7 @@ const tabs = [
 
 type TabId = (typeof tabs)[number]["id"];
 
-export function ResultDeepDive({ result, onClose }: ResultDeepDiveProps) {
+export function ResultDeepDive({ result, configName, onClose }: ResultDeepDiveProps) {
   const [activeTab, setActiveTab] = useState<TabId>("code");
 
   const funcStatus = result.functional_pass ? "pass" : "fail";
@@ -99,9 +100,9 @@ export function ResultDeepDive({ result, onClose }: ResultDeepDiveProps) {
 
       {/* Tab content */}
       <div className="min-h-[200px]">
-        {activeTab === "prompt" && <PromptTab resultId={result.id} />}
-        {activeTab === "code" && <CodeTab resultId={result.id} />}
-        {activeTab === "logs" && <LogsTab resultId={result.id} />}
+        {activeTab === "prompt" && <PromptTab configName={configName} resultId={result.id} />}
+        {activeTab === "code" && <CodeTab configName={configName} resultId={result.id} />}
+        {activeTab === "logs" && <LogsTab configName={configName} resultId={result.id} />}
         {activeTab === "preview" && (
           <PreviewTab resultId={result.id} framework={result.framework} scenario={result.scenario} />
         )}
