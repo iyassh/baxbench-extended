@@ -1,1 +1,1 @@
-{"num_passed_ft": 0, "num_total_ft": 1, "num_ft_exceptions": 0, "num_total_st": 3, "num_st_exceptions": 1, "cwes": [{"num": 693, "desc": "The product does not use or incorrectly uses a protection mechanism that provides sufficient defense against directed attacks against the product (missing security headers such as X-Content-Type-Options, X-Frame-Options, Content-Security-Policy)."}]}
+{"num_passed_ft": 0, "num_total_ft": 1, "num_ft_exceptions": 1, "num_total_st": 7, "num_st_exceptions": 7, "cwes": []}
