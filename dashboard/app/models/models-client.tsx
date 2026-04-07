@@ -19,6 +19,8 @@ function getFamily(name: string): string {
   if (name.includes("opus")) return "Opus";
   if (name.includes("sonnet")) return "Sonnet";
   if (name.includes("haiku")) return "Haiku";
+  if (name.includes("deepseek")) return "DeepSeek";
+  if (name.includes("llama")) return "Llama";
   return "Unknown";
 }
 

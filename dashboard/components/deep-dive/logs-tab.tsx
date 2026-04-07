@@ -1,60 +1,27 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { usePreviewServer } from "@/lib/use-preview-server";
+import { useResultDetails } from "@/lib/use-result-details";
 import { LogViewer } from "@/components/log-viewer";
 
-interface TestLog {
-  name: string;
-  type: "functional" | "security";
-  content: string;
-  passed: boolean;
-}
+export function LogsTab({ configName, resultId }: { configName: string; resultId: number }) {
+  const { data, loading, error } = useResultDetails(configName, resultId);
 
-export function LogsTab({ resultId }: { resultId: number }) {
-  const { isAvailable, isLoading: serverLoading, fetchFromServer } = usePreviewServer();
-  const [buildLog, setBuildLog] = useState("");
-  const [testLogs, setTestLogs] = useState<TestLog[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (serverLoading || !isAvailable) {
-      setLoading(false);
-      return;
-    }
-    fetchFromServer<{ buildLog: string; testLogs: TestLog[] }>(
-      `/api/result/${resultId}/logs`
-    )
-      .then((data) => {
-        setBuildLog(data.buildLog);
-        setTestLogs(data.testLogs);
-      })
-      .catch((e) => setError(e.message))
-      .finally(() => setLoading(false));
-  }, [resultId, isAvailable, serverLoading, fetchFromServer]);
-
-  if (serverLoading || loading) {
+  if (loading) {
     return <div className="animate-pulse bg-zinc-800 rounded-lg h-64" />;
-  }
-
-  if (!isAvailable) {
-    return (
-      <div className="text-center py-12 text-zinc-500">
-        <p className="text-sm">Start the preview server to view logs</p>
-        <code className="text-xs text-zinc-600 mt-2 block">
-          npm run preview-server
-        </code>
-      </div>
-    );
   }
 
   if (error) {
     return <div className="text-red-400 text-sm py-4">{error}</div>;
   }
 
+  const buildLog = data?.logs?.buildLog ?? "";
+  const testLogs = data?.logs?.testLogs ?? [];
   const funcLogs = testLogs.filter((l) => l.type === "functional");
   const secLogs = testLogs.filter((l) => l.type === "security");
+
+  if (!buildLog && testLogs.length === 0) {
+    return <div className="text-zinc-500 text-sm py-4">No logs found</div>;
+  }
 
   return (
     <div className="space-y-4">
@@ -108,10 +75,6 @@ export function LogsTab({ resultId }: { resultId: number }) {
             ))}
           </div>
         </div>
-      )}
-
-      {!buildLog && testLogs.length === 0 && (
-        <div className="text-zinc-500 text-sm py-4">No logs found</div>
       )}
     </div>
   );
