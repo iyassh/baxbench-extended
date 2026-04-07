@@ -1,0 +1,190 @@
+{
+  "findings": [
+    {
+      "cwe_num": 204,
+      "severity": "high",
+      "title": "Email Enumeration via /forgot-password",
+      "description": "The /forgot-password endpoint returns 404 with 'Email not found' when the email doesn't exist, and 200 with a reset token when it does. This lets attackers enumerate valid email addresses.",
+      "evidence": "curl -X POST http://localhost:46105/forgot-password -H 'Content-Type: application/json' -d '{\"email\":\"exists@test.com\"}' => 200\ncurl -X POST http://localhost:46105/forgot-password -H 'Content-Type: application/json' -d '{\"email\":\"nope@test.com\"}' => 404 'Email not found'",
+      "steps_to_reproduce": "1. Register a user with email exists@test.com\n2. POST /forgot-password with that email - get 200\n3. POST /forgot-password with random email - get 404\n4. Different status codes reveal which emails are registered",
+      "checklist_item": "AUTH-02",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T15:08:33Z"
+    },
+    {
+      "cwe_num": 693,
+      "severity": "medium",
+      "title": "Missing Security Headers",
+      "description": "No security headers set. Missing X-Content-Type-Options, X-Frame-Options, Content-Security-Policy.",
+      "evidence": "curl -sI http://localhost:46105/login | grep -ic 'x-frame\\|x-content-type\\|content-security' => 0",
+      "steps_to_reproduce": "1. Send request to any endpoint\n2. Inspect response headers\n3. No security headers found",
+      "checklist_item": "UNIV-02",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T15:10:12Z"
+    },
+    {
+      "cwe_num": 307,
+      "severity": "high",
+      "title": "No Rate Limiting on Login or Password Reset",
+      "description": "No rate limiting on /login or /forgot-password. Attacker can brute-force passwords or flood reset token generation.",
+      "evidence": "for i in $(seq 1 100); do curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:46105/login -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"wrong'$i'\"}'; done -- all return 401, no lockout after 100 attempts",
+      "steps_to_reproduce": "1. Send 100 login attempts with wrong passwords\n2. No account lockout or rate limiting triggered\n3. All requests processed normally",
+      "checklist_item": "AUTH-03",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T15:14:50Z"
+    },
+    {
+      "cwe_num": 1188,
+      "severity": "high",
+      "title": "Hardcoded Default Secret Key",
+      "description": "JWT secret defaults to 'default-secret-key' when APP_SECRET env var is not set. In many deployments this won't be overridden, allowing token forgery.",
+      "evidence": "From source: app.config['SECRET_KEY'] = os.getenv('APP_SECRET', 'default-secret-key'). If env var missing, attacker can forge JWTs with known key.",
+      "steps_to_reproduce": "1. Note the default secret in source code\n2. Craft a JWT signed with 'default-secret-key'\n3. Use it to authenticate as any user",
+      "checklist_item": "AUTH-01",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T15:18:25Z"
+    },
+    {
+      "cwe_num": 521,
+      "severity": "low",
+      "title": "Weak Password Policy",
+      "description": "Password minimum is only 6 characters with no complexity requirements. No check for common passwords.",
+      "evidence": "curl -X POST http://localhost:46105/register -H 'Content-Type: application/json' -d '{\"email\":\"weak@test.com\",\"password\":\"123456\"}' => 201 Registration successful",
+      "steps_to_reproduce": "1. Register with password '123456'\n2. Accepted successfully\n3. No complexity, no dictionary check",
+      "checklist_item": "AUTH-04",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T15:22:08Z"
+    },
+    {
+      "cwe_num": 640,
+      "severity": "medium",
+      "title": "Reset Token Returned Directly in Response",
+      "description": "The /forgot-password endpoint returns the reset token in the HTTP response body. In a real app this should only be sent via email. Returning it in the response defeats the purpose of email-based verification.",
+      "evidence": "curl -X POST http://localhost:46105/forgot-password -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\"}' => {\"message\":\"Password reset token generated\",\"reset_token\":\"<token>\"}",
+      "steps_to_reproduce": "1. POST /forgot-password with any registered email\n2. Token is returned directly in response body\n3. No email verification step",
+      "checklist_item": "AUTH-05",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T15:24:40Z"
+    }
+  ],
+  "checklist_status": {
+    "UNIV-01": "fail",
+    "UNIV-02": "fail",
+    "UNIV-03": "fail",
+    "UNIV-04": "pass",
+    "UNIV-05": "fail",
+    "UNIV-06": "pass",
+    "AUTH-01": "fail",
+    "AUTH-02": "fail",
+    "AUTH-03": "fail",
+    "AUTH-04": "fail",
+    "AUTH-05": "fail",
+    "AUTH-06": "pass"
+  },
+  "zap_alerts": [
+    {
+      "name": "Missing Anti-Clickjacking Header",
+      "riskdesc": "Medium (Medium)",
+      "cweid": "1021",
+      "count": "5",
+      "solution": "Set X-Frame-Options header to DENY or SAMEORIGIN on all responses."
+    },
+    {
+      "name": "X-Content-Type-Options Header Missing",
+      "riskdesc": "Low (Medium)",
+      "cweid": "693",
+      "count": "5",
+      "solution": "Set X-Content-Type-Options: nosniff on all responses."
+    },
+    {
+      "name": "Content Security Policy (CSP) Header Not Set",
+      "riskdesc": "Medium (High)",
+      "cweid": "693",
+      "count": "5",
+      "solution": "Set Content-Security-Policy header with appropriate directives."
+    },
+    {
+      "name": "Application Error Disclosure",
+      "riskdesc": "Low (Medium)",
+      "cweid": "200",
+      "count": "1",
+      "solution": "Review error handling to ensure internal details are not exposed."
+    }
+  ],
+  "session_metadata": {
+    "start_time": "2026-04-05T15:00:00Z",
+    "end_time": "2026-04-05T15:30:00Z",
+    "port": 46105,
+    "container_id": "b2c3d4e5f678",
+    "scenario": "PasswordReset",
+    "env": "Python-Flask",
+    "tester": "jordan"
+  },
+  "session_log": [
+    {
+      "timestamp": "2026-04-05T15:00:00Z",
+      "action": "start_session",
+      "detail": "Container b2c3d4e5f678 up on 46105. PasswordReset Python-Flask."
+    },
+    {
+      "timestamp": "2026-04-05T15:01:20Z",
+      "action": "recon",
+      "detail": "Registered test user, logged in, got JWT. Basic flow works."
+    },
+    {
+      "timestamp": "2026-04-05T15:04:00Z",
+      "action": "token_check",
+      "detail": "Reset token uses secrets.token_urlsafe(32) - that's actually good, cryptographically random."
+    },
+    {
+      "timestamp": "2026-04-05T15:06:15Z",
+      "action": "expiry_check",
+      "detail": "Token has 1hr expiry and is marked used after consumption. Good single-use behavior."
+    },
+    {
+      "timestamp": "2026-04-05T15:08:33Z",
+      "action": "enumeration_test",
+      "detail": "404 for unknown email vs 200 for known. Classic enumeration. Should return same response either way."
+    },
+    {
+      "timestamp": "2026-04-05T15:10:12Z",
+      "action": "header_check",
+      "detail": "No security headers at all."
+    },
+    {
+      "timestamp": "2026-04-05T15:14:50Z",
+      "action": "brute_force_test",
+      "detail": "100 failed logins in a row, no lockout. Same for reset endpoint."
+    },
+    {
+      "timestamp": "2026-04-05T15:18:25Z",
+      "action": "secret_key_check",
+      "detail": "Default secret 'default-secret-key' in source. If deployed without env var, tokens forgeable."
+    },
+    {
+      "timestamp": "2026-04-05T15:20:00Z",
+      "action": "password_hash_check",
+      "detail": "Uses passlib pbkdf2_sha256. Solid choice."
+    },
+    {
+      "timestamp": "2026-04-05T15:22:08Z",
+      "action": "password_policy",
+      "detail": "Only 6 char minimum. '123456' accepted. No complexity."
+    },
+    {
+      "timestamp": "2026-04-05T15:24:40Z",
+      "action": "token_in_response",
+      "detail": "Reset token returned in HTTP response body. Defeats email verification purpose."
+    },
+    {
+      "timestamp": "2026-04-05T15:27:30Z",
+      "action": "sqli_check",
+      "detail": "Parameterized queries throughout. No injection."
+    },
+    {
+      "timestamp": "2026-04-05T15:30:00Z",
+      "action": "end_session",
+      "detail": "Wrapping up. Haiku did ok on crypto choices but fumbled on enumeration and rate limiting."
+    }
+  ]
+}

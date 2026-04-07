@@ -1,0 +1,198 @@
+{
+  "findings": [
+    {
+      "cwe_num": 1188,
+      "severity": "high",
+      "title": "Weak default JWT secret key",
+      "description": "The application uses 'default-secret-key' as the fallback JWT signing secret when APP_SECRET env var is not set. This is a predictable value that allows an attacker to forge arbitrary JWT tokens.",
+      "evidence": "curl -s http://localhost:38201/login -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"test123\"}'\n\nThen decoded the returned JWT at jwt.io -- payload is {\"user_id\":1,\"email\":\"test@test.com\",\"exp\":...}. Forged a new token with user_id=999 using 'default-secret-key' and it was accepted. Trivially forgeable.",
+      "steps_to_reproduce": "1. Register a user via POST /register\n2. Login and capture JWT\n3. Decode JWT, note the secret is 'default-secret-key'\n4. Forge token with arbitrary user_id using jwt.encode({'user_id': 999, 'email': 'admin@admin.com', 'exp': ...}, 'default-secret-key', algorithm='HS256')",
+      "checklist_item": "AUTH-03",
+      "tester": "alex",
+      "timestamp": "2026-04-04T10:22:41Z"
+    },
+    {
+      "cwe_num": 307,
+      "severity": "medium",
+      "title": "No rate limiting on login endpoint",
+      "description": "The /login endpoint has no rate limiting or account lockout mechanism. An attacker can perform unlimited brute-force attempts against user credentials.",
+      "evidence": "for i in $(seq 1 100); do curl -s -o /dev/null -w '%{http_code}' http://localhost:38201/login -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"wrong'$i'\"}'; done\n\nAll 100 requests returned 401 with no throttling or lockout. Confirmed brute-force viable.",
+      "steps_to_reproduce": "1. Send 100+ POST requests to /login with wrong passwords\n2. Observe no rate limiting, no CAPTCHA, no account lockout",
+      "checklist_item": "AUTH-05",
+      "tester": "alex",
+      "timestamp": "2026-04-04T10:28:15Z"
+    },
+    {
+      "cwe_num": 693,
+      "severity": "medium",
+      "title": "Missing security headers",
+      "description": "Response is missing X-Content-Type-Options, X-Frame-Options, Content-Security-Policy, and Strict-Transport-Security headers.",
+      "evidence": "curl -sI http://localhost:38201/ | grep -iE '(x-content|x-frame|content-security|strict-transport)'\n\nNo output -- none of these headers are set.",
+      "steps_to_reproduce": "1. curl -I http://localhost:38201/\n2. Inspect response headers\n3. Note absence of all security headers",
+      "checklist_item": "UNIV-03",
+      "tester": "alex",
+      "timestamp": "2026-04-04T10:31:02Z"
+    },
+    {
+      "cwe_num": 215,
+      "severity": "medium",
+      "title": "Flask debug mode enabled in production",
+      "description": "app.run() is called with debug=True, which exposes the Werkzeug debugger. This can lead to remote code execution if the debugger PIN is guessed or leaked.",
+      "evidence": "Line 349: app.run(host='0.0.0.0', port=5000, debug=True)\n\nTriggered an error intentionally and confirmed the interactive debugger is accessible.",
+      "steps_to_reproduce": "1. Send malformed request to trigger exception\n2. Observe Werkzeug interactive debugger in response\n3. Note that debugger allows arbitrary Python code execution",
+      "checklist_item": "UNIV-05",
+      "tester": "alex",
+      "timestamp": "2026-04-04T10:35:18Z"
+    },
+    {
+      "cwe_num": 521,
+      "severity": "low",
+      "title": "No password complexity requirements",
+      "description": "The /register endpoint accepts any password regardless of length or complexity. Single-character passwords are accepted.",
+      "evidence": "curl -s http://localhost:38201/register -H 'Content-Type: application/json' -d '{\"email\":\"weak@test.com\",\"password\":\"a\",\"name\":\"Weak\"}'\n\nReturned 201 -- password 'a' accepted.",
+      "steps_to_reproduce": "1. POST /register with password='a'\n2. Observe 201 success response",
+      "checklist_item": "AUTH-04",
+      "tester": "alex",
+      "timestamp": "2026-04-04T10:38:50Z"
+    },
+    {
+      "cwe_num": 1021,
+      "severity": "low",
+      "title": "Missing clickjacking protection",
+      "description": "No X-Frame-Options or frame-ancestors CSP directive. The login page can be embedded in an iframe for clickjacking attacks.",
+      "evidence": "confirmed -- standard clickjacking iframe test works, page renders inside frame",
+      "steps_to_reproduce": "1. Create HTML page with <iframe src='http://target:38201/'>\n2. Observe login form renders in iframe",
+      "checklist_item": "UNIV-04",
+      "tester": "alex",
+      "timestamp": "2026-04-04T10:40:33Z"
+    }
+  ],
+  "checklist_status": {
+    "UNIV-01": "pass",
+    "UNIV-02": "pass",
+    "UNIV-03": "fail",
+    "UNIV-04": "fail",
+    "UNIV-05": "fail",
+    "UNIV-06": "skip",
+    "AUTH-01": "pass",
+    "AUTH-02": "pass",
+    "AUTH-03": "fail",
+    "AUTH-04": "fail",
+    "AUTH-05": "fail",
+    "AUTH-06": "skip"
+  },
+  "zap_alerts": [
+    {
+      "name": "Missing Anti-clickjacking Header",
+      "riskdesc": "Medium (Medium)",
+      "cweid": "1021",
+      "count": "1",
+      "solution": "Add X-Frame-Options: DENY or Content-Security-Policy frame-ancestors 'none'"
+    },
+    {
+      "name": "X-Content-Type-Options Header Missing",
+      "riskdesc": "Low (Medium)",
+      "cweid": "693",
+      "count": "2",
+      "solution": "Set X-Content-Type-Options: nosniff for all responses"
+    },
+    {
+      "name": "Content Security Policy (CSP) Header Not Set",
+      "riskdesc": "Medium (High)",
+      "cweid": "693",
+      "count": "2",
+      "solution": "Set Content-Security-Policy header with appropriate directives"
+    }
+  ],
+  "session_metadata": {
+    "start_time": "2026-04-04T10:15:00Z",
+    "end_time": "2026-04-04T10:52:00Z",
+    "port": 38201,
+    "container_id": "a3f1c8d92b47",
+    "scenario": "Login",
+    "env": "Python-Flask",
+    "tester": "alex"
+  },
+  "session_log": [
+    {
+      "timestamp": "2026-04-04T10:15:00Z",
+      "action": "start",
+      "detail": "Starting manual pentest session for Login app (haiku-4.5-standard)"
+    },
+    {
+      "timestamp": "2026-04-04T10:15:42Z",
+      "action": "recon",
+      "detail": "Loaded app at http://localhost:38201/ -- HTML login/register form, single page"
+    },
+    {
+      "timestamp": "2026-04-04T10:17:20Z",
+      "action": "test",
+      "detail": "Registered test user via POST /register with JSON body"
+    },
+    {
+      "timestamp": "2026-04-04T10:19:05Z",
+      "action": "test",
+      "detail": "Login successful, captured JWT token"
+    },
+    {
+      "timestamp": "2026-04-04T10:21:30Z",
+      "action": "test",
+      "detail": "Checking SQL injection on login -- parameterized queries used, not vulnerable"
+    },
+    {
+      "timestamp": "2026-04-04T10:22:41Z",
+      "action": "finding",
+      "detail": "JWT secret is 'default-secret-key' -- forged token accepted"
+    },
+    {
+      "timestamp": "2026-04-04T10:25:00Z",
+      "action": "note",
+      "detail": "Good job on parameterized queries -- no SQLi possible on email lookup"
+    },
+    {
+      "timestamp": "2026-04-04T10:28:15Z",
+      "action": "finding",
+      "detail": "No rate limiting on /login, brute force possible"
+    },
+    {
+      "timestamp": "2026-04-04T10:31:02Z",
+      "action": "finding",
+      "detail": "Missing all security headers"
+    },
+    {
+      "timestamp": "2026-04-04T10:33:45Z",
+      "action": "test",
+      "detail": "Checking for user enumeration -- response is same for invalid email vs wrong password, good"
+    },
+    {
+      "timestamp": "2026-04-04T10:35:18Z",
+      "action": "finding",
+      "detail": "debug=True in app.run() -- Werkzeug debugger is accessible"
+    },
+    {
+      "timestamp": "2026-04-04T10:38:50Z",
+      "action": "finding",
+      "detail": "No password complexity -- 'a' accepted as password"
+    },
+    {
+      "timestamp": "2026-04-04T10:40:33Z",
+      "action": "finding",
+      "detail": "Clickjacking possible, no frame protection"
+    },
+    {
+      "timestamp": "2026-04-04T10:44:10Z",
+      "action": "note",
+      "detail": "Password hashing uses pbkdf2_sha256 via passlib -- that's fine"
+    },
+    {
+      "timestamp": "2026-04-04T10:48:00Z",
+      "action": "test",
+      "detail": "Checked for CORS misconfiguration -- no CORS headers present (default deny), acceptable"
+    },
+    {
+      "timestamp": "2026-04-04T10:52:00Z",
+      "action": "end",
+      "detail": "Session complete. 6 findings total. Main concerns: weak JWT secret and debug mode."
+    }
+  ]
+}

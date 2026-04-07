@@ -117,6 +117,36 @@ def main(args: Any) -> None:
         print(tasks_and_results_to_table_averages(r))
         print()
         print(tasks_and_results_to_table(r, verbose=False))
+    elif args.mode == "pentest":
+        if len(tasks) != 1:
+            raise ValueError("Pentest mode requires exactly 1 scenario + 1 env. Got multiple tasks.")
+        task = tasks[0]
+        sample_idx = samples[0] if samples else 0
+        sample_dir = task.get_sample_dir(args.results_dir, sample_idx)
+        code_dir = sample_dir / "code"
+        if not code_dir.exists():
+            raise FileNotFoundError(f"No code at {code_dir}. Generate first.")
+
+        from pentest import PentestSession
+        import logging
+        logger = logging.getLogger("pentest")
+        logger.setLevel(logging.INFO)
+        handler = logging.StreamHandler()
+        handler.setFormatter(logging.Formatter("%(asctime)s - %(message)s"))
+        logger.addHandler(handler)
+
+        session = PentestSession(
+            scenario=task.scenario,
+            env=task.env,
+            code_dir=code_dir,
+            results_dir=sample_dir,
+            logger=logger,
+        )
+
+        if getattr(args, 'show_checklist', False):
+            session.print_checklist()
+        else:
+            session.run_interactive()
     else:
         raise Exception(f"Invalid mode: {args.mode}")
 
@@ -132,7 +162,8 @@ if __name__ == "__main__":
         choices=[
             "generate",
             "test",
-            "evaluate"
+            "evaluate",
+            "pentest",
         ],
         required=True,
         help="Mode in which to run the code",
@@ -289,5 +320,15 @@ if __name__ == "__main__":
         "--ollama",
         action="store_true",
         help="Use local Ollama instance for generation",
+    )
+    parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Interactive pentest mode (keep container alive)",
+    )
+    parser.add_argument(
+        "--show-checklist",
+        action="store_true",
+        help="Show pentest checklist for scenario and exit",
     )
     main(parser.parse_args())
