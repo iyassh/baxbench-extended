@@ -10,12 +10,14 @@ import {
   Tooltip,
   ResponsiveContainer,
   Cell,
+  Legend,
 } from "recharts";
 import { ChartTooltip } from "@/components/chart-tooltip";
 
 interface ModelRankingData {
   name: string;
   sec_pass_at_1: number;
+  true_sec_pass_at_1: number;
   pass_at_1: number;
   total_cwes: number;
   family: string;
@@ -43,27 +45,35 @@ function getBarColor(family: string, thinking: boolean): string {
 
 function CustomTooltipContent(props: {
   active?: boolean;
-  payload?: Array<{ payload: ModelRankingData; value: number }>;
+  payload?: Array<{ payload: ModelRankingData; value: number; name: string; fill: string }>;
   label?: string;
 }) {
   const { active, payload, label } = props;
   if (!active || !payload || payload.length === 0) return null;
 
   const d = payload[0].payload;
+  const secPassValue = payload.find(p => p.name === 'sec_pass_at_1')?.value || d.sec_pass_at_1;
+  const trueSecPassValue = payload.find(p => p.name === 'true_sec_pass_at_1')?.value || d.true_sec_pass_at_1;
+
   return (
     <ChartTooltip
       active
       label={label}
       payload={[
         {
-          name: "sec_pass@1",
-          value: d.sec_pass_at_1,
-          color: getBarColor(d.family, d.thinking),
+          name: "sec_pass@1 (incl. crashes)",
+          value: secPassValue,
+          color: "#f59e0b",
         },
         {
-          name: "pass@1",
+          name: "true_sec@1 (clean only)",
+          value: trueSecPassValue,
+          color: "#10b981",
+        },
+        {
+          name: "pass@1 (functional)",
           value: d.pass_at_1,
-          color: "#a1a1aa",
+          color: "#3b82f6",
         },
         {
           name: "CWEs Found",
@@ -82,7 +92,7 @@ function CustomTooltipContent(props: {
 
 export function ModelRankingChart({ data }: ModelRankingChartProps) {
   const sorted = [...data].sort(
-    (a, b) => b.sec_pass_at_1 - a.sec_pass_at_1
+    (a, b) => b.true_sec_pass_at_1 - a.true_sec_pass_at_1
   );
 
   const chartHeight = Math.max(500, sorted.length * 44);
@@ -125,14 +135,29 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
             content={<CustomTooltipContent />}
             cursor={{ fill: "rgba(255,255,255,0.03)" }}
           />
-          <Bar dataKey="sec_pass_at_1" radius={[0, 4, 4, 0]} maxBarSize={28}>
-            {sorted.map((entry, index) => (
-              <Cell
-                key={`cell-${index}`}
-                fill={getBarColor(entry.family, entry.thinking)}
-              />
-            ))}
-          </Bar>
+          <Legend
+            verticalAlign="top"
+            height={36}
+            iconType="rect"
+            wrapperStyle={{ paddingBottom: "20px" }}
+            formatter={(value) => {
+              if (value === 'sec_pass_at_1') return 'sec_pass@1 (incl. crashes)';
+              if (value === 'true_sec_pass_at_1') return 'true_sec@1 (clean only)';
+              return value;
+            }}
+          />
+          <Bar
+            dataKey="sec_pass_at_1"
+            fill="#f59e0b"
+            radius={[0, 4, 4, 0]}
+            maxBarSize={16}
+          />
+          <Bar
+            dataKey="true_sec_pass_at_1"
+            fill="#10b981"
+            radius={[0, 4, 4, 0]}
+            maxBarSize={16}
+          />
         </BarChart>
       </ResponsiveContainer>
 

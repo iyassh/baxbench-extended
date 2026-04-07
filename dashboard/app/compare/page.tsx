@@ -25,7 +25,7 @@ export default function ComparePage() {
   // ── Transform safety data ─────────────────────────────
   const safetyByConfig: Record<
     string,
-    { config: string; none: number; generic: number; specific: number }
+    { config: string; none: number; generic: number; specific: number; none_true: number; generic_true: number; specific_true: number }
   > = {};
   for (const row of safetyRaw) {
     if (!safetyByConfig[row.config_name]) {
@@ -34,15 +34,23 @@ export default function ComparePage() {
         none: 0,
         generic: 0,
         specific: 0,
+        none_true: 0,
+        generic_true: 0,
+        specific_true: 0,
       };
     }
     const rate =
       row.total > 0
         ? Math.round((row.secure_passes / row.total) * 1000) / 10
         : 0;
+    const rateTrue =
+      row.total > 0
+        ? Math.round((row.truly_secure_passes / row.total) * 1000) / 10
+        : 0;
     const key = row.safety_prompt as "none" | "generic" | "specific";
     if (key in safetyByConfig[row.config_name]) {
       safetyByConfig[row.config_name][key] = rate;
+      safetyByConfig[row.config_name][`${key}_true`] = rateTrue;
     }
   }
   const safetyChartData: SafetyChartRow[] = Object.values(safetyByConfig);
@@ -52,12 +60,20 @@ export default function ComparePage() {
     none: Math.round(row.baseline * 1000) / 10,
     specific: Math.round(row.comparison * 1000) / 10,
     change: Math.round(row.delta * 1000) / 10,
+    none_true: Math.round(row.baseline_true * 1000) / 10,
+    specific_true: Math.round(row.comparison_true * 1000) / 10,
+    change_true: Math.round(row.delta_true * 1000) / 10,
   }));
 
   // Calculate average improvement
   const safetyAvgImprovement =
     safetyDeltaData.length > 0
       ? safetyDeltaData.reduce((sum, r) => sum + r.change, 0) /
+        safetyDeltaData.length
+      : 0;
+  const safetyAvgImprovementTrue =
+    safetyDeltaData.length > 0
+      ? safetyDeltaData.reduce((sum, r) => sum + r.change_true, 0) /
         safetyDeltaData.length
       : 0;
 
@@ -169,6 +185,7 @@ export default function ComparePage() {
           safetyChartData={safetyChartData}
           safetyDeltaData={safetyDeltaData}
           safetyAvgImprovement={safetyAvgImprovement}
+          safetyAvgImprovementTrue={safetyAvgImprovementTrue}
           thinkingChartData={thinkingChartData}
           thinkingDeltaData={thinkingDeltaData}
           frameworkChartData={frameworkChartData}

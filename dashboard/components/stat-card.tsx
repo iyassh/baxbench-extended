@@ -8,7 +8,7 @@ interface StatCardProps {
   title: string;
   value: number | string;
   subtitle?: string;
-  accent?: "emerald" | "red" | "amber" | "blue" | "purple";
+  accent?: "emerald" | "red" | "amber" | "blue" | "purple" | "green";
   miniChart?: React.ReactNode;
 }
 
@@ -20,6 +20,11 @@ const accentConfig: Record<
     text: "text-emerald-400",
     glow: "glow-emerald",
     border: "border-emerald-800/50",
+  },
+  green: {
+    text: "text-green-400",
+    glow: "glow-green",
+    border: "border-green-800/50",
   },
   red: {
     text: "text-red-400",
@@ -79,7 +84,7 @@ export function StatCard({
 }: StatCardProps) {
   const isAnimatable = typeof value === "number" && !String(value).includes("%");
   const isLongString = typeof value === "string" && value.length > 16;
-  const config = accentConfig[accent];
+  const config = accentConfig[accent] || accentConfig.emerald;
   const [hovered, setHovered] = useState(false);
 
   return (

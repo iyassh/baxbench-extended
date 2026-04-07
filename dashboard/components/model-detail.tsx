@@ -55,7 +55,9 @@ export function ModelDetail({
   const [selectedResult, setSelectedResult] = useState<ResultWithCwes | null>(null);
   const family = getFamily(config.name);
   const secPass = Math.round(config.sec_pass_at_1 * 1000) / 10;
+  const trueSecPass = Math.round((config.true_sec_pass_at_1 || 0) * 1000) / 10;
   const passAt1 = Math.round(config.pass_at_1 * 1000) / 10;
+  const secureByCrash = config.secure_by_crash || 0;
 
   // Top CWEs
   const cweCount: Record<number, { num: number; desc: string; count: number }> =
@@ -127,7 +129,7 @@ export function ModelDetail({
       </div>
 
       {/* Stats row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <MiniStat
           label="pass@1"
           value={`${passAt1.toFixed(1)}%`}
@@ -145,14 +147,25 @@ export function ModelDetail({
           }
         />
         <MiniStat
+          label="true_sec@1"
+          value={`${trueSecPass.toFixed(1)}%`}
+          accent={
+            trueSecPass >= 80
+              ? "text-emerald-400"
+              : trueSecPass >= 50
+                ? "text-amber-400"
+                : "text-red-400"
+          }
+        />
+        <MiniStat
           label="Total CWEs"
           value={String(config.total_cwes)}
           accent="text-red-400"
         />
         <MiniStat
-          label="Total Results"
-          value={String(config.total_results)}
-          accent="text-zinc-200"
+          label="Secure by Crash"
+          value={String(secureByCrash)}
+          accent="text-amber-400"
         />
       </div>
 

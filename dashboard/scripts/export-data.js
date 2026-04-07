@@ -40,6 +40,9 @@ const configs = db
       SUM(CASE WHEN NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
       ) THEN 1 ELSE 0 END) as secure_passes,
+      SUM(CASE WHEN NOT EXISTS (
+        SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
+      ) AND r.num_st_exceptions = 0 AND r.num_ft_exceptions = 0 THEN 1 ELSE 0 END) as truly_secure_passes,
       (SELECT COUNT(*) FROM result_cwes rc
        JOIN results r2 ON rc.result_id = r2.id
        WHERE r2.config_id = c.id) as total_cwes
@@ -54,6 +57,8 @@ const configs = db
     thinking: Boolean(row.thinking),
     pass_at_1: row.total_results > 0 ? row.functional_passes / row.total_results : 0,
     sec_pass_at_1: row.total_results > 0 ? row.secure_passes / row.total_results : 0,
+    true_sec_pass_at_1: row.total_results > 0 ? row.truly_secure_passes / row.total_results : 0,
+    secure_by_crash: row.secure_passes - row.truly_secure_passes,
   }));
 
 write("configs", configs);
@@ -140,7 +145,10 @@ const safetyComparison = db
       SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
       SUM(CASE WHEN NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
-      ) THEN 1 ELSE 0 END) as secure_passes
+      ) THEN 1 ELSE 0 END) as secure_passes,
+      SUM(CASE WHEN NOT EXISTS (
+        SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
+      ) AND r.num_st_exceptions = 0 AND r.num_ft_exceptions = 0 THEN 1 ELSE 0 END) as truly_secure_passes
     FROM results r
     JOIN configs c ON r.config_id = c.id
     GROUP BY c.name, r.safety_prompt

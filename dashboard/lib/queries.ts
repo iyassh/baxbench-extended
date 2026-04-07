@@ -216,7 +216,10 @@ export function getSafetyPromptDelta(): DeltaRow[] {
 
   const byConfig = new Map<
     string,
-    { none: { secure: number; total: number }; specific: { secure: number; total: number } }
+    {
+      none: { secure: number; truly_secure: number; total: number };
+      specific: { secure: number; truly_secure: number; total: number }
+    }
   >();
 
   for (const row of safetyData) {
@@ -224,16 +227,18 @@ export function getSafetyPromptDelta(): DeltaRow[] {
       continue;
     if (!byConfig.has(row.config_name)) {
       byConfig.set(row.config_name, {
-        none: { secure: 0, total: 0 },
-        specific: { secure: 0, total: 0 },
+        none: { secure: 0, truly_secure: 0, total: 0 },
+        specific: { secure: 0, truly_secure: 0, total: 0 },
       });
     }
     const entry = byConfig.get(row.config_name)!;
     if (row.safety_prompt === "none") {
       entry.none.secure += row.secure_passes;
+      entry.none.truly_secure += row.truly_secure_passes;
       entry.none.total += row.total;
     } else {
       entry.specific.secure += row.secure_passes;
+      entry.specific.truly_secure += row.truly_secure_passes;
       entry.specific.total += row.total;
     }
   }
@@ -249,7 +254,16 @@ export function getSafetyPromptDelta(): DeltaRow[] {
     const delta = comparison - baseline;
     const delta_pct = baseline > 0 ? (delta / baseline) * 100 : 0;
 
-    results.push({ config, baseline, comparison, delta, delta_pct });
+    const baseline_true =
+      data.none.total > 0 ? data.none.truly_secure / data.none.total : 0;
+    const comparison_true =
+      data.specific.total > 0
+        ? data.specific.truly_secure / data.specific.total
+        : 0;
+    const delta_true = comparison_true - baseline_true;
+    const delta_pct_true = baseline_true > 0 ? (delta_true / baseline_true) * 100 : 0;
+
+    results.push({ config, baseline, comparison, delta, delta_pct, baseline_true, comparison_true, delta_true, delta_pct_true });
   }
 
   return results.sort((a, b) => a.config.localeCompare(b.config));
