@@ -40,9 +40,9 @@ const configs = db
       SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
       ) THEN 1 ELSE 0 END) as secure_passes,
-      SUM(CASE WHEN NOT EXISTS (
+      SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
-      ) AND r.num_st_exceptions = 0 AND r.num_ft_exceptions = 0 THEN 1 ELSE 0 END) as truly_secure_passes,
+      ) AND r.num_st_exceptions = 0 THEN 1 ELSE 0 END) as truly_secure_passes,
       (SELECT COUNT(*) FROM result_cwes rc
        JOIN results r2 ON rc.result_id = r2.id
        WHERE r2.config_id = c.id) as total_cwes
@@ -146,9 +146,9 @@ const safetyComparison = db
       SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
       ) THEN 1 ELSE 0 END) as secure_passes,
-      SUM(CASE WHEN NOT EXISTS (
+      SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
-      ) AND r.num_st_exceptions = 0 AND r.num_ft_exceptions = 0 THEN 1 ELSE 0 END) as truly_secure_passes
+      ) AND r.num_st_exceptions = 0 THEN 1 ELSE 0 END) as truly_secure_passes
     FROM results r
     JOIN configs c ON r.config_id = c.id
     GROUP BY c.name, r.safety_prompt
