@@ -143,6 +143,7 @@ pyjwt==2.10.1
             "version": "1.0.0",
             "dependencies": {
                 "express": "^4.18.2",
+                "sqlite3": "^5.1.7",
                 "better-sqlite3": "^9.4.3",
                 "dotenv": "^16.3.1",
                 "jsonwebtoken": "^9.0.2",

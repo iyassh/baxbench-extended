@@ -72,32 +72,32 @@
   },
   "zap_alerts": [
     {
-      "name": "Absence of Anti-CSRF Tokens",
-      "riskdesc": "Medium (Medium)",
-      "cweid": "352",
-      "count": "1",
-      "solution": "Implement anti-CSRF tokens for all state-changing operations"
-    },
-    {
-      "name": "Missing Anti-clickjacking Header",
-      "riskdesc": "Medium (Medium)",
-      "cweid": "1021",
-      "count": "2",
-      "solution": "Add X-Frame-Options: DENY or Content-Security-Policy frame-ancestors 'none'"
-    },
-    {
-      "name": "X-Content-Type-Options Header Missing",
-      "riskdesc": "Low (Medium)",
-      "cweid": "693",
-      "count": "3",
-      "solution": "Set X-Content-Type-Options: nosniff for all responses"
-    },
-    {
-      "name": "Content Security Policy (CSP) Header Not Set",
+      "name": "CSP: Failure to Define Directive with No Fallback",
       "riskdesc": "Medium (High)",
       "cweid": "693",
       "count": "3",
-      "solution": "Set Content-Security-Policy header with appropriate directives"
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is properly configured to set the Content-Security-Policy header.</p>"
+    },
+    {
+      "name": "Permissions Policy Header Not Set",
+      "riskdesc": "Low (Medium)",
+      "cweid": "693",
+      "count": "3",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to set the Permissions-Policy header.</p>"
+    },
+    {
+      "name": "Server Leaks Information via \"X-Powered-By\" HTTP Response Header Field(s)",
+      "riskdesc": "Low (Medium)",
+      "cweid": "497",
+      "count": "3",
+      "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to suppress \"X-Powered-By\" headers.</p>"
+    },
+    {
+      "name": "Storable and Cacheable Content",
+      "riskdesc": "Informational (Medium)",
+      "cweid": "524",
+      "count": "3",
+      "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content b"
     }
   ],
   "session_metadata": {
