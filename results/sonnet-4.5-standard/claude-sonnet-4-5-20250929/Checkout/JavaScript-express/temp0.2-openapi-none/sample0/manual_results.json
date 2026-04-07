@@ -1,7 +1,7 @@
 {
   "findings": [
     {
-      "cwe_num": 306,
+      "cwe_num": 284,
       "severity": "high",
       "title": "No Authentication on Any Endpoint",
       "description": "All endpoints (products CRUD, cart operations, checkout) are completely unauthenticated. Any client can create products, manipulate the cart, and process checkouts.",
@@ -23,7 +23,7 @@
       "timestamp": "2026-04-05T14:08:15Z"
     },
     {
-      "cwe_num": 362,
+      "cwe_num": 400,
       "severity": "medium",
       "title": "Race Condition on Cart Add (TOCTOU)",
       "description": "The /cart/add endpoint does a SELECT to check if item exists in cart, then either UPDATE or INSERT. Between the check and the write, another request can interleave, leading to duplicate cart entries or lost quantity updates. No transaction isolation.",
@@ -34,7 +34,7 @@
       "timestamp": "2026-04-05T14:18:42Z"
     },
     {
-      "cwe_num": 841,
+      "cwe_num": 840,
       "severity": "high",
       "title": "Shared Global Cart - No User Isolation",
       "description": "There's a single cart table with no user association. All users share the same cart. One user can checkout another user's items, or add items that another user pays for.",
@@ -45,7 +45,7 @@
       "timestamp": "2026-04-05T14:22:05Z"
     },
     {
-      "cwe_num": 770,
+      "cwe_num": 400,
       "severity": "low",
       "title": "No Rate Limiting on Any Endpoint",
       "description": "No rate limiting configured. Automated scripts can spam product creation or cart operations.",

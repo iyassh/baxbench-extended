@@ -12,7 +12,7 @@
       "timestamp": "2026-04-04T16:14:22Z"
     },
     {
-      "cwe_num": 200,
+      "cwe_num": 209,
       "severity": "low",
       "title": "Verbose Error Messages Leak Internal Details",
       "description": "Generic exception handler on line 65 returns str(e) to the client, which can leak internal paths, library versions, or DB schema details.",
@@ -23,7 +23,7 @@
       "timestamp": "2026-04-04T16:19:55Z"
     },
     {
-      "cwe_num": 306,
+      "cwe_num": 284,
       "severity": "high",
       "title": "No Authentication on Any Endpoint",
       "description": "Both /import and /items are completely unauthenticated. Anyone can import arbitrary data or read all stored items.",
@@ -34,7 +34,7 @@
       "timestamp": "2026-04-04T16:22:10Z"
     },
     {
-      "cwe_num": 770,
+      "cwe_num": 400,
       "severity": "medium",
       "title": "No Input Size Limit on XML Payload",
       "description": "No Content-Length restriction or payload size limit. An attacker can send extremely large XML to exhaust memory or fill the database.",
@@ -45,7 +45,7 @@
       "timestamp": "2026-04-04T16:28:43Z"
     },
     {
-      "cwe_num": 1021,
+      "cwe_num": 693,
       "severity": "low",
       "title": "Missing Anti-Clickjacking Header",
       "description": "X-Frame-Options header not set. While this is an API, it could still be embedded in an iframe for confused deputy attacks.",

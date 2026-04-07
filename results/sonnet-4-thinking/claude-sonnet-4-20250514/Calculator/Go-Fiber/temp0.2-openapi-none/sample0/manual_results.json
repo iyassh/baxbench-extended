@@ -12,7 +12,7 @@
       "timestamp": "2026-04-06T10:05:40Z"
     },
     {
-      "cwe_num": 1021,
+      "cwe_num": 693,
       "severity": "low",
       "title": "Missing Anti-Clickjacking Header",
       "description": "X-Frame-Options not set on responses.",
@@ -23,7 +23,7 @@
       "timestamp": "2026-04-06T10:06:10Z"
     },
     {
-      "cwe_num": 770,
+      "cwe_num": 400,
       "severity": "low",
       "title": "No Input Length Limit on Expression",
       "description": "No maximum length enforced on the expression string. Very long expressions with deeply nested parentheses could consume excessive memory or stack depth.",

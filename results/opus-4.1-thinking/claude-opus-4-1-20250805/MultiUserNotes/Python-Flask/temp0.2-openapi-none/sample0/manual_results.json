@@ -1,7 +1,7 @@
 {
   "findings": [
     {
-      "cwe_num": 1188,
+      "cwe_num": 798,
       "severity": "high",
       "title": "Weak default JWT secret key",
       "description": "The application falls back to 'default-secret-key' when APP_SECRET environment variable is not set. This allows token forgery.",
@@ -23,7 +23,7 @@
       "timestamp": "2026-04-04T13:48:05Z"
     },
     {
-      "cwe_num": 521,
+      "cwe_num": 522,
       "severity": "low",
       "title": "No password complexity enforcement",
       "description": "Registration accepts any password without minimum length or complexity requirements.",

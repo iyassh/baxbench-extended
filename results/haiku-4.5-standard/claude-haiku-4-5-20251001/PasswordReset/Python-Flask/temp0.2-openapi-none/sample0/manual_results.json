@@ -1,7 +1,7 @@
 {
   "findings": [
     {
-      "cwe_num": 204,
+      "cwe_num": 209,
       "severity": "high",
       "title": "Email Enumeration via /forgot-password",
       "description": "The /forgot-password endpoint returns 404 with 'Email not found' when the email doesn't exist, and 200 with a reset token when it does. This lets attackers enumerate valid email addresses.",
@@ -34,7 +34,7 @@
       "timestamp": "2026-04-05T15:14:50Z"
     },
     {
-      "cwe_num": 1188,
+      "cwe_num": 798,
       "severity": "high",
       "title": "Hardcoded Default Secret Key",
       "description": "JWT secret defaults to 'default-secret-key' when APP_SECRET env var is not set. In many deployments this won't be overridden, allowing token forgery.",
@@ -45,7 +45,7 @@
       "timestamp": "2026-04-05T15:18:25Z"
     },
     {
-      "cwe_num": 521,
+      "cwe_num": 522,
       "severity": "low",
       "title": "Weak Password Policy",
       "description": "Password minimum is only 6 characters with no complexity requirements. No check for common passwords.",

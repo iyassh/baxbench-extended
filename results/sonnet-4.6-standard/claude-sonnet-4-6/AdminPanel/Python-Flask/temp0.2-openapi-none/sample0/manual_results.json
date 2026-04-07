@@ -1,7 +1,7 @@
 {
   "findings": [
     {
-      "cwe_num": 1188,
+      "cwe_num": 798,
       "severity": "high",
       "title": "Weak default JWT secret key",
       "description": "SECRET_KEY falls back to 'default-secret-key' when APP_SECRET is not set. An attacker who knows this default can forge tokens with any user_id and role.",
@@ -12,7 +12,7 @@
       "timestamp": "2026-04-04T15:52:20Z"
     },
     {
-      "cwe_num": 269,
+      "cwe_num": 284,
       "severity": "medium",
       "title": "Admin can delete themselves causing orphaned admin state",
       "description": "The DELETE /admin/users/<id> endpoint allows an admin to delete their own account. If the only admin deletes themselves, there is no way to create a new admin except by wiping the database (first user gets admin role).",

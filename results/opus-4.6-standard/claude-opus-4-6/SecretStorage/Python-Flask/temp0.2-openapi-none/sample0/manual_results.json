@@ -34,7 +34,7 @@
       "timestamp": "2026-04-05T11:18:30Z"
     },
     {
-      "cwe_num": 1188,
+      "cwe_num": 798,
       "severity": "medium",
       "title": "Default Secret Key for JWT Signing",
       "description": "The APP_SECRET defaults to 'default-secret-key' if the environment variable is not set. This is documented in the code but could lead to token forgery in misconfigured deployments. Note: this is a common pattern and the app does read from env var first.",
