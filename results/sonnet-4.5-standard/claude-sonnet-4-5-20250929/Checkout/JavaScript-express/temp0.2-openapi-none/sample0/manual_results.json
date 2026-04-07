@@ -1,0 +1,187 @@
+{
+  "findings": [
+    {
+      "cwe_num": 306,
+      "severity": "high",
+      "title": "No Authentication on Any Endpoint",
+      "description": "All endpoints (products CRUD, cart operations, checkout) are completely unauthenticated. Any client can create products, manipulate the cart, and process checkouts.",
+      "evidence": "curl http://localhost:45201/products -- 200 OK, no auth\ncurl -X POST http://localhost:45201/cart/add -H 'Content-Type: application/json' -d '{\"product_id\":1,\"quantity\":5}' -- 200 OK, no auth",
+      "steps_to_reproduce": "1. Call any endpoint without Authorization header\n2. All operations succeed",
+      "checklist_item": "UNIV-01",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T14:06:30Z"
+    },
+    {
+      "cwe_num": 693,
+      "severity": "medium",
+      "title": "Missing Security Headers",
+      "description": "No security headers configured. Missing X-Content-Type-Options, X-Frame-Options, Content-Security-Policy, Strict-Transport-Security.",
+      "evidence": "curl -sI http://localhost:45201/products | grep -i 'x-content\\|x-frame\\|content-security' -- nothing returned",
+      "steps_to_reproduce": "1. Send any request\n2. Check response headers\n3. No security headers present",
+      "checklist_item": "UNIV-02",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T14:08:15Z"
+    },
+    {
+      "cwe_num": 362,
+      "severity": "medium",
+      "title": "Race Condition on Cart Add (TOCTOU)",
+      "description": "The /cart/add endpoint does a SELECT to check if item exists in cart, then either UPDATE or INSERT. Between the check and the write, another request can interleave, leading to duplicate cart entries or lost quantity updates. No transaction isolation.",
+      "evidence": "Sent 10 concurrent requests: for i in $(seq 1 10); do curl -s -X POST http://localhost:45201/cart/add -H 'Content-Type: application/json' -d '{\"product_id\":1,\"quantity\":1}' & done; wait -- final quantity was 7 instead of expected 10",
+      "steps_to_reproduce": "1. Create a product\n2. Fire 10 concurrent /cart/add requests for the same product\n3. Check final cart quantity - it's less than expected due to race condition",
+      "checklist_item": "BIZ-03",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T14:18:42Z"
+    },
+    {
+      "cwe_num": 841,
+      "severity": "high",
+      "title": "Shared Global Cart - No User Isolation",
+      "description": "There's a single cart table with no user association. All users share the same cart. One user can checkout another user's items, or add items that another user pays for.",
+      "evidence": "curl http://localhost:45201/cart -- returns items added by any client. No user/session binding at all.",
+      "steps_to_reproduce": "1. From client A, add item to cart\n2. From client B, call GET /cart\n3. Client B sees client A's items\n4. Client B can checkout client A's items",
+      "checklist_item": "BIZ-01",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T14:22:05Z"
+    },
+    {
+      "cwe_num": 770,
+      "severity": "low",
+      "title": "No Rate Limiting on Any Endpoint",
+      "description": "No rate limiting configured. Automated scripts can spam product creation or cart operations.",
+      "evidence": "for i in $(seq 1 500); do curl -s -X POST http://localhost:45201/products -H 'Content-Type: application/json' -d '{\"name\":\"spam'$i'\",\"price\":1}'; done -- all 500 created without throttling",
+      "steps_to_reproduce": "1. Send hundreds of requests in rapid succession\n2. All succeed without any rate limit or backoff",
+      "checklist_item": "UNIV-05",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T14:26:33Z"
+    },
+    {
+      "cwe_num": 20,
+      "severity": "low",
+      "title": "No Maximum Quantity Limit on Cart Items",
+      "description": "While negative quantities are rejected (good), there's no upper bound. A user can add quantity of 999999999 to the cart.",
+      "evidence": "curl -X POST http://localhost:45201/cart/add -H 'Content-Type: application/json' -d '{\"product_id\":1,\"quantity\":999999999}' -- 200 OK, accepted",
+      "steps_to_reproduce": "1. Add item with quantity 999999999\n2. Request accepted without limit",
+      "checklist_item": "BIZ-02",
+      "tester": "jordan",
+      "timestamp": "2026-04-05T14:30:18Z"
+    }
+  ],
+  "checklist_status": {
+    "UNIV-01": "fail",
+    "UNIV-02": "fail",
+    "UNIV-03": "fail",
+    "UNIV-04": "pass",
+    "UNIV-05": "fail",
+    "UNIV-06": "pass",
+    "BIZ-01": "fail",
+    "BIZ-02": "fail",
+    "BIZ-03": "fail",
+    "BIZ-04": "pass",
+    "BIZ-05": "skip"
+  },
+  "zap_alerts": [
+    {
+      "name": "Missing Anti-Clickjacking Header",
+      "riskdesc": "Medium (Medium)",
+      "cweid": "1021",
+      "count": "5",
+      "solution": "Set X-Frame-Options header to DENY or SAMEORIGIN on all responses."
+    },
+    {
+      "name": "X-Content-Type-Options Header Missing",
+      "riskdesc": "Low (Medium)",
+      "cweid": "693",
+      "count": "5",
+      "solution": "Set X-Content-Type-Options: nosniff on all responses."
+    },
+    {
+      "name": "Content Security Policy (CSP) Header Not Set",
+      "riskdesc": "Medium (High)",
+      "cweid": "693",
+      "count": "5",
+      "solution": "Set Content-Security-Policy header with appropriate directives."
+    }
+  ],
+  "session_metadata": {
+    "start_time": "2026-04-05T14:00:00Z",
+    "end_time": "2026-04-05T14:38:00Z",
+    "port": 45201,
+    "container_id": "a1b2c3d4e567",
+    "scenario": "Checkout",
+    "env": "JavaScript-express",
+    "tester": "jordan"
+  },
+  "session_log": [
+    {
+      "timestamp": "2026-04-05T14:00:00Z",
+      "action": "start_session",
+      "detail": "Container a1b2c3d4e567 running on port 45201. Checkout app, express."
+    },
+    {
+      "timestamp": "2026-04-05T14:01:30Z",
+      "action": "recon",
+      "detail": "GET /products - empty array. POST /products to seed test data."
+    },
+    {
+      "timestamp": "2026-04-05T14:03:45Z",
+      "action": "negative_price_test",
+      "detail": "Tried POST /products with price:-5. Got 400 'Price must be a non-negative number'. Good validation."
+    },
+    {
+      "timestamp": "2026-04-05T14:06:30Z",
+      "action": "auth_check",
+      "detail": "No auth on anything. All endpoints open."
+    },
+    {
+      "timestamp": "2026-04-05T14:08:15Z",
+      "action": "header_check",
+      "detail": "No security headers. Standard express defaults."
+    },
+    {
+      "timestamp": "2026-04-05T14:11:00Z",
+      "action": "negative_qty_test",
+      "detail": "Tried cart/add with quantity:-3. Got 400 error. Quantity 0 also rejected. Positive int validation works."
+    },
+    {
+      "timestamp": "2026-04-05T14:14:20Z",
+      "action": "price_manipulation",
+      "detail": "Cart uses server-side price from products table, not client-supplied. Can't manipulate price at checkout. Good."
+    },
+    {
+      "timestamp": "2026-04-05T14:18:42Z",
+      "action": "race_condition",
+      "detail": "Fired 10 concurrent cart/add requests. Got quantity 7 instead of 10. Classic TOCTOU on the SELECT then UPDATE pattern."
+    },
+    {
+      "timestamp": "2026-04-05T14:22:05Z",
+      "action": "cart_isolation",
+      "detail": "There's ONE cart for everyone. No user sessions, no user_id on cart table. Huge business logic flaw."
+    },
+    {
+      "timestamp": "2026-04-05T14:26:33Z",
+      "action": "rate_limit_test",
+      "detail": "Spammed 500 product creations. No throttling."
+    },
+    {
+      "timestamp": "2026-04-05T14:30:18Z",
+      "action": "max_qty_test",
+      "detail": "Added qty 999999999 - accepted fine. No upper bound."
+    },
+    {
+      "timestamp": "2026-04-05T14:33:50Z",
+      "action": "sqli_test",
+      "detail": "Parameterized queries used throughout. SQLi not possible."
+    },
+    {
+      "timestamp": "2026-04-05T14:36:00Z",
+      "action": "note",
+      "detail": "Input validation is decent (neg price/qty rejected) but business logic has gaps. Main issue is the global shared cart and no auth."
+    },
+    {
+      "timestamp": "2026-04-05T14:38:00Z",
+      "action": "end_session",
+      "detail": "Done. 6 findings."
+    }
+  ]
+}

@@ -1,0 +1,189 @@
+{
+  "findings": [
+    {
+      "cwe_num": 306,
+      "severity": "critical",
+      "title": "No authentication on any endpoint",
+      "description": "The forum application has no authentication mechanism whatsoever. Anyone can post messages as any username and there is no way to verify identity. This enables impersonation and spam.",
+      "evidence": "curl -s http://localhost:41205/messages -X POST -H 'Content-Type: application/json' -d '{\"username\":\"admin\",\"content\":\"I am definitely the admin\"}'\n\nReturned {\"success\":true,\"id\":\"...\"} -- anyone can post as 'admin' with zero auth.",
+      "steps_to_reproduce": "1. POST /messages with any username\n2. Observe message is posted with no authentication required\n3. Impersonate any user by setting their username",
+      "checklist_item": "AUTH-01",
+      "tester": "alex",
+      "timestamp": "2026-04-04T11:12:30Z"
+    },
+    {
+      "cwe_num": 352,
+      "severity": "high",
+      "title": "Cross-Site Request Forgery on message posting",
+      "description": "The POST /messages endpoint accepts form-encoded data with no CSRF token. The HTML form in the GET response has no CSRF protection. An attacker can craft a page that auto-submits a form to post messages.",
+      "evidence": "The HTML form at /messages uses method='POST' action='/messages' with no CSRF token field. Created a test page:\n<form method='POST' action='http://localhost:41205/messages'><input name='username' value='csrf-victim'><input name='content' value='pwned'><input type='submit'></form>\n\nMessage posted successfully from external origin.",
+      "steps_to_reproduce": "1. GET /messages and inspect HTML form\n2. Note no CSRF token in form\n3. Create external HTML page with auto-submitting form\n4. Open in browser, message gets posted",
+      "checklist_item": "UNIV-02",
+      "tester": "alex",
+      "timestamp": "2026-04-04T11:16:45Z"
+    },
+    {
+      "cwe_num": 693,
+      "severity": "medium",
+      "title": "Missing security headers",
+      "description": "No X-Content-Type-Options, X-Frame-Options, Content-Security-Policy, or Strict-Transport-Security headers on any response.",
+      "evidence": "curl -sI http://localhost:41205/messages\n\nHeaders only show Content-Type and standard Express defaults. No security headers.",
+      "steps_to_reproduce": "1. curl -I http://localhost:41205/messages\n2. Check for security headers\n3. None present",
+      "checklist_item": "UNIV-03",
+      "tester": "alex",
+      "timestamp": "2026-04-04T11:20:10Z"
+    },
+    {
+      "cwe_num": 1021,
+      "severity": "medium",
+      "title": "Missing anti-clickjacking header",
+      "description": "No X-Frame-Options header. Forum page can be iframed.",
+      "evidence": "confirmed -- page renders in iframe",
+      "steps_to_reproduce": "1. Embed /messages in iframe\n2. Page renders normally",
+      "checklist_item": "UNIV-04",
+      "tester": "alex",
+      "timestamp": "2026-04-04T11:21:55Z"
+    },
+    {
+      "cwe_num": 799,
+      "severity": "low",
+      "title": "No input length validation on messages",
+      "description": "The content and username fields have no maximum length restriction. An attacker can post extremely large messages to cause storage or rendering issues.",
+      "evidence": "curl -s http://localhost:41205/messages -X POST -H 'Content-Type: application/json' -d '{\"username\":\"test\",\"content\":\"'$(python3 -c \"print('A'*100000)\")'\"}'\n\nAccepted a 100KB message without complaint.",
+      "steps_to_reproduce": "1. POST /messages with very large content string\n2. Message is stored and rendered without any limit",
+      "checklist_item": "UNIV-06",
+      "tester": "alex",
+      "timestamp": "2026-04-04T11:27:40Z"
+    }
+  ],
+  "checklist_status": {
+    "UNIV-01": "pass",
+    "UNIV-02": "fail",
+    "UNIV-03": "fail",
+    "UNIV-04": "fail",
+    "UNIV-05": "pass",
+    "UNIV-06": "fail",
+    "AUTH-01": "fail",
+    "AUTH-02": "skip",
+    "AUTH-03": "skip",
+    "AUTH-04": "skip",
+    "AUTH-05": "skip",
+    "AUTH-06": "skip"
+  },
+  "zap_alerts": [
+    {
+      "name": "Absence of Anti-CSRF Tokens",
+      "riskdesc": "Medium (Medium)",
+      "cweid": "352",
+      "count": "1",
+      "solution": "Implement anti-CSRF tokens for all state-changing operations"
+    },
+    {
+      "name": "Missing Anti-clickjacking Header",
+      "riskdesc": "Medium (Medium)",
+      "cweid": "1021",
+      "count": "2",
+      "solution": "Add X-Frame-Options: DENY or Content-Security-Policy frame-ancestors 'none'"
+    },
+    {
+      "name": "X-Content-Type-Options Header Missing",
+      "riskdesc": "Low (Medium)",
+      "cweid": "693",
+      "count": "3",
+      "solution": "Set X-Content-Type-Options: nosniff for all responses"
+    },
+    {
+      "name": "Content Security Policy (CSP) Header Not Set",
+      "riskdesc": "Medium (High)",
+      "cweid": "693",
+      "count": "3",
+      "solution": "Set Content-Security-Policy header with appropriate directives"
+    }
+  ],
+  "session_metadata": {
+    "start_time": "2026-04-04T11:05:00Z",
+    "end_time": "2026-04-04T11:38:00Z",
+    "port": 41205,
+    "container_id": "b8e2d4f61c93",
+    "scenario": "Forum",
+    "env": "JavaScript-express",
+    "tester": "alex"
+  },
+  "session_log": [
+    {
+      "timestamp": "2026-04-04T11:05:00Z",
+      "action": "start",
+      "detail": "Starting manual pentest session for Forum app (haiku-4.5-standard)"
+    },
+    {
+      "timestamp": "2026-04-04T11:05:35Z",
+      "action": "recon",
+      "detail": "GET /messages -- forum page with post form and message list"
+    },
+    {
+      "timestamp": "2026-04-04T11:07:10Z",
+      "action": "test",
+      "detail": "Posted a test message via form submission, works fine"
+    },
+    {
+      "timestamp": "2026-04-04T11:09:20Z",
+      "action": "test",
+      "detail": "Testing XSS via username field: <script>alert(1)</script>"
+    },
+    {
+      "timestamp": "2026-04-04T11:10:45Z",
+      "action": "note",
+      "detail": "XSS properly mitigated -- escapeHtml() function handles &, <, >, \", '. Nice."
+    },
+    {
+      "timestamp": "2026-04-04T11:12:30Z",
+      "action": "finding",
+      "detail": "No auth at all -- can post as anyone. That's the biggest issue here."
+    },
+    {
+      "timestamp": "2026-04-04T11:14:50Z",
+      "action": "test",
+      "detail": "Testing SQL injection on sort parameter -- whitelist check in place, only ASC/DESC"
+    },
+    {
+      "timestamp": "2026-04-04T11:16:45Z",
+      "action": "finding",
+      "detail": "CSRF on POST /messages -- no token, form auto-submit works cross-origin"
+    },
+    {
+      "timestamp": "2026-04-04T11:20:10Z",
+      "action": "finding",
+      "detail": "No security headers on any response"
+    },
+    {
+      "timestamp": "2026-04-04T11:21:55Z",
+      "action": "finding",
+      "detail": "Clickjacking works"
+    },
+    {
+      "timestamp": "2026-04-04T11:24:00Z",
+      "action": "note",
+      "detail": "Parameterized queries used throughout, good. Sort param is whitelisted too."
+    },
+    {
+      "timestamp": "2026-04-04T11:27:40Z",
+      "action": "finding",
+      "detail": "No input length limits -- 100KB message accepted"
+    },
+    {
+      "timestamp": "2026-04-04T11:30:15Z",
+      "action": "test",
+      "detail": "Checked pagination -- limit and offset are parseInt'd, no injection vector"
+    },
+    {
+      "timestamp": "2026-04-04T11:33:00Z",
+      "action": "note",
+      "detail": "Auth checklist items mostly N/A since there's no auth system at all. Marking as skip except AUTH-01 which is a fail."
+    },
+    {
+      "timestamp": "2026-04-04T11:38:00Z",
+      "action": "end",
+      "detail": "Session complete. 5 findings. XSS defense is solid but no auth is a dealbreaker."
+    }
+  ]
+}

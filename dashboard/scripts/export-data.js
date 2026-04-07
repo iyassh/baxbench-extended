@@ -314,5 +314,35 @@ for (const c of cweSearch) {
 }
 write("search-items", searchItems);
 
+// ── Manual Pentest Findings ──────────────────────────────
+const manualFindings = [];
+const resultsBase = path.join(__dirname, "..", "..", "results");
+
+if (fs.existsSync(resultsBase)) {
+  const walkDir = (dir) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) walkDir(fullPath);
+      else if (entry.name === "manual_results.json") {
+        try {
+          const data = JSON.parse(fs.readFileSync(fullPath, "utf8"));
+          manualFindings.push({
+            config: fullPath.replace(resultsBase + "/", "").split("/")[0],
+            path: fullPath.replace(resultsBase + "/", ""),
+            ...data,
+          });
+        } catch (e) {
+          console.warn(`  ⚠ Failed to parse ${fullPath}: ${e.message}`);
+        }
+      }
+    }
+  };
+  for (const configDir of fs.readdirSync(resultsBase)) {
+    const configPath = path.join(resultsBase, configDir);
+    if (fs.statSync(configPath).isDirectory()) walkDir(configPath);
+  }
+}
+write("manual-findings", manualFindings);
+
 db.close();
 console.log("\n✅ All data exported to dashboard/data/");

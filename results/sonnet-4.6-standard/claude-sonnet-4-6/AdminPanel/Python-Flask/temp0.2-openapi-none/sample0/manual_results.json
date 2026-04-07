@@ -1,0 +1,164 @@
+{
+  "findings": [
+    {
+      "cwe_num": 1188,
+      "severity": "high",
+      "title": "Weak default JWT secret key",
+      "description": "SECRET_KEY falls back to 'default-secret-key' when APP_SECRET is not set. An attacker who knows this default can forge tokens with any user_id and role.",
+      "evidence": "Line 10: SECRET_KEY = os.environ.get('APP_SECRET', 'default-secret-key')\n\nForged admin token: jwt.encode({'user_id': 1, 'exp': ...}, 'default-secret-key', algorithm='HS256')\nUsed it to call GET /admin/users -- returned full user list. Token forgery confirmed.",
+      "steps_to_reproduce": "1. Observe default secret in source\n2. Forge JWT with user_id of admin user\n3. Call admin endpoints with forged token",
+      "checklist_item": "AUTH-03",
+      "tester": "alex",
+      "timestamp": "2026-04-04T15:52:20Z"
+    },
+    {
+      "cwe_num": 269,
+      "severity": "medium",
+      "title": "Admin can delete themselves causing orphaned admin state",
+      "description": "The DELETE /admin/users/<id> endpoint allows an admin to delete their own account. If the only admin deletes themselves, there is no way to create a new admin except by wiping the database (first user gets admin role).",
+      "evidence": "curl -s http://localhost:43102/admin/users/1 -X DELETE -H 'Authorization: Bearer <admin_token>'\n\nReturns {\"message\":\"User deleted\"} -- admin deleted themselves. No self-deletion guard.",
+      "steps_to_reproduce": "1. Login as admin (first registered user)\n2. DELETE /admin/users/1 (own user ID)\n3. Admin account is deleted\n4. No admin exists, no way to promote users",
+      "checklist_item": "AUTH-06",
+      "tester": "alex",
+      "timestamp": "2026-04-04T15:56:45Z"
+    },
+    {
+      "cwe_num": 693,
+      "severity": "medium",
+      "title": "Missing security headers",
+      "description": "No X-Content-Type-Options, X-Frame-Options, Content-Security-Policy, or Strict-Transport-Security headers.",
+      "evidence": "curl -sI http://localhost:43102/profile -H 'Authorization: Bearer <token>'\n\nNo security headers present.",
+      "steps_to_reproduce": "1. Make any authenticated request\n2. Check response headers",
+      "checklist_item": "UNIV-03",
+      "tester": "alex",
+      "timestamp": "2026-04-04T15:59:10Z"
+    },
+    {
+      "cwe_num": 307,
+      "severity": "medium",
+      "title": "No rate limiting on login endpoint",
+      "description": "The /login endpoint allows unlimited authentication attempts with no rate limiting or account lockout.",
+      "evidence": "Ran 200 rapid login attempts with wrong passwords -- all returned 401 with no throttling. Brute force is feasible.",
+      "steps_to_reproduce": "1. Send 200+ POST /login requests with incorrect passwords\n2. Observe no rate limiting or lockout",
+      "checklist_item": "AUTH-05",
+      "tester": "alex",
+      "timestamp": "2026-04-04T16:01:30Z"
+    }
+  ],
+  "checklist_status": {
+    "UNIV-01": "pass",
+    "UNIV-02": "pass",
+    "UNIV-03": "fail",
+    "UNIV-04": "pass",
+    "UNIV-05": "pass",
+    "UNIV-06": "skip",
+    "AUTH-01": "pass",
+    "AUTH-02": "pass",
+    "AUTH-03": "fail",
+    "AUTH-04": "skip",
+    "AUTH-05": "fail",
+    "AUTH-06": "fail"
+  },
+  "zap_alerts": [
+    {
+      "name": "X-Content-Type-Options Header Missing",
+      "riskdesc": "Low (Medium)",
+      "cweid": "693",
+      "count": "5",
+      "solution": "Set X-Content-Type-Options: nosniff for all responses"
+    },
+    {
+      "name": "Content Security Policy (CSP) Header Not Set",
+      "riskdesc": "Medium (High)",
+      "cweid": "693",
+      "count": "5",
+      "solution": "Set Content-Security-Policy header with appropriate directives"
+    }
+  ],
+  "session_metadata": {
+    "start_time": "2026-04-04T15:40:00Z",
+    "end_time": "2026-04-04T16:05:00Z",
+    "port": 43102,
+    "container_id": "e7a1b5d8c934",
+    "scenario": "AdminPanel",
+    "env": "Python-Flask",
+    "tester": "alex"
+  },
+  "session_log": [
+    {
+      "timestamp": "2026-04-04T15:40:00Z",
+      "action": "start",
+      "detail": "Starting manual pentest session for AdminPanel app (sonnet-4.6-standard)"
+    },
+    {
+      "timestamp": "2026-04-04T15:41:20Z",
+      "action": "recon",
+      "detail": "Endpoints: /register, /login, /profile, /admin/users, /admin/users/<id>. Role-based access control."
+    },
+    {
+      "timestamp": "2026-04-04T15:43:00Z",
+      "action": "test",
+      "detail": "Registered first user -- got admin role automatically (count==0 check). Smart."
+    },
+    {
+      "timestamp": "2026-04-04T15:44:30Z",
+      "action": "test",
+      "detail": "Registered second user -- got 'user' role. Good, no mass assignment on role field."
+    },
+    {
+      "timestamp": "2026-04-04T15:46:15Z",
+      "action": "test",
+      "detail": "Tried POST /register with {\"email\":\"...\",\"password\":\"...\",\"role\":\"admin\"} -- role field is ignored, always computed server-side"
+    },
+    {
+      "timestamp": "2026-04-04T15:47:50Z",
+      "action": "note",
+      "detail": "No mass assignment vulnerability -- role is determined by user count, not user input. Well done."
+    },
+    {
+      "timestamp": "2026-04-04T15:49:30Z",
+      "action": "test",
+      "detail": "Tested /admin/users with regular user token -- returns 403 Forbidden. Admin decorator works."
+    },
+    {
+      "timestamp": "2026-04-04T15:50:50Z",
+      "action": "note",
+      "detail": "Authorization chain is correct: token_required runs first, sets g.current_user, then admin_required checks role. Clean implementation."
+    },
+    {
+      "timestamp": "2026-04-04T15:52:20Z",
+      "action": "finding",
+      "detail": "JWT secret is 'default-secret-key' -- same issue as most of these apps"
+    },
+    {
+      "timestamp": "2026-04-04T15:54:00Z",
+      "action": "test",
+      "detail": "Tried privilege escalation via forged token with role claim -- but role comes from DB lookup, not token. Good."
+    },
+    {
+      "timestamp": "2026-04-04T15:56:45Z",
+      "action": "finding",
+      "detail": "Admin can delete their own account -- no self-deletion guard"
+    },
+    {
+      "timestamp": "2026-04-04T15:59:10Z",
+      "action": "finding",
+      "detail": "Missing security headers"
+    },
+    {
+      "timestamp": "2026-04-04T16:01:30Z",
+      "action": "finding",
+      "detail": "No rate limiting on /login"
+    },
+    {
+      "timestamp": "2026-04-04T16:03:00Z",
+      "action": "note",
+      "detail": "Overall solid implementation. Role is DB-driven not token-driven, parameterized queries throughout, werkzeug password hashing. The main issues are operational (weak secret, no rate limit) not architectural."
+    },
+    {
+      "timestamp": "2026-04-04T16:05:00Z",
+      "action": "end",
+      "detail": "Session complete. 4 findings. Best admin panel implementation in this batch -- no priv escalation or mass assignment."
+    }
+  ]
+}

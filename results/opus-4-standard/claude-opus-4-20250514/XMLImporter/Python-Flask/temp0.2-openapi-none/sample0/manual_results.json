@@ -1,0 +1,169 @@
+{
+  "findings": [
+    {
+      "cwe_num": 693,
+      "severity": "medium",
+      "title": "Missing Security Headers",
+      "description": "No security headers set on any response. Missing X-Content-Type-Options, X-Frame-Options, Content-Security-Policy, Strict-Transport-Security.",
+      "evidence": "curl -v http://localhost:44310/items 2>&1 | grep -i 'x-content-type\\|x-frame\\|content-security\\|strict-transport' (no output)",
+      "steps_to_reproduce": "1. Send GET /items\n2. Inspect response headers\n3. No security headers present",
+      "checklist_item": "UNIV-02",
+      "tester": "jordan",
+      "timestamp": "2026-04-04T16:14:22Z"
+    },
+    {
+      "cwe_num": 200,
+      "severity": "low",
+      "title": "Verbose Error Messages Leak Internal Details",
+      "description": "Generic exception handler on line 65 returns str(e) to the client, which can leak internal paths, library versions, or DB schema details.",
+      "evidence": "curl -X POST http://localhost:44310/import -H 'Content-Type: application/xml' -d '{not xml at all but also not caught by parse check}' -- got back internal error string",
+      "steps_to_reproduce": "1. POST malformed but parseable data to /import\n2. Trigger an unexpected exception path\n3. Observe internal error details in response body",
+      "checklist_item": "UNIV-04",
+      "tester": "jordan",
+      "timestamp": "2026-04-04T16:19:55Z"
+    },
+    {
+      "cwe_num": 306,
+      "severity": "high",
+      "title": "No Authentication on Any Endpoint",
+      "description": "Both /import and /items are completely unauthenticated. Anyone can import arbitrary data or read all stored items.",
+      "evidence": "curl http://localhost:44310/items -- returns all items, no auth needed\ncurl -X POST http://localhost:44310/import -H 'Content-Type: application/xml' -d '<items><item><name>pwned</name><value>test</value></item></items>' -- 200 OK",
+      "steps_to_reproduce": "1. Send GET /items without any auth header\n2. Observe full data returned\n3. POST to /import without auth\n4. Data accepted and stored",
+      "checklist_item": "UNIV-01",
+      "tester": "jordan",
+      "timestamp": "2026-04-04T16:22:10Z"
+    },
+    {
+      "cwe_num": 770,
+      "severity": "medium",
+      "title": "No Input Size Limit on XML Payload",
+      "description": "No Content-Length restriction or payload size limit. An attacker can send extremely large XML to exhaust memory or fill the database.",
+      "evidence": "python3 -c \"print('<items>' + '<item><name>x</name><value>y</value></item>' * 100000 + '</items>')\" | curl -X POST http://localhost:44310/import -H 'Content-Type: application/xml' -d @- -- accepted, 100000 rows inserted",
+      "steps_to_reproduce": "1. Generate XML with 100k item elements\n2. POST to /import\n3. All items inserted without any limit or throttling",
+      "checklist_item": "EXT-02",
+      "tester": "jordan",
+      "timestamp": "2026-04-04T16:28:43Z"
+    },
+    {
+      "cwe_num": 1021,
+      "severity": "low",
+      "title": "Missing Anti-Clickjacking Header",
+      "description": "X-Frame-Options header not set. While this is an API, it could still be embedded in an iframe for confused deputy attacks.",
+      "evidence": "curl -sI http://localhost:44310/items | grep -i x-frame (no output)",
+      "steps_to_reproduce": "1. Check response headers on any endpoint\n2. X-Frame-Options is absent",
+      "checklist_item": "UNIV-03",
+      "tester": "jordan",
+      "timestamp": "2026-04-04T16:15:01Z"
+    }
+  ],
+  "checklist_status": {
+    "UNIV-01": "fail",
+    "UNIV-02": "fail",
+    "UNIV-03": "fail",
+    "UNIV-04": "fail",
+    "UNIV-05": "pass",
+    "UNIV-06": "pass",
+    "EXT-01": "pass",
+    "EXT-02": "fail",
+    "EXT-03": "skip"
+  },
+  "zap_alerts": [
+    {
+      "name": "Missing Anti-Clickjacking Header",
+      "riskdesc": "Medium (Medium)",
+      "cweid": "1021",
+      "count": "2",
+      "solution": "Set X-Frame-Options header to DENY or SAMEORIGIN on all responses."
+    },
+    {
+      "name": "X-Content-Type-Options Header Missing",
+      "riskdesc": "Low (Medium)",
+      "cweid": "693",
+      "count": "2",
+      "solution": "Set X-Content-Type-Options: nosniff on all responses."
+    },
+    {
+      "name": "Content Security Policy (CSP) Header Not Set",
+      "riskdesc": "Medium (High)",
+      "cweid": "693",
+      "count": "2",
+      "solution": "Set Content-Security-Policy header with appropriate directives."
+    }
+  ],
+  "session_metadata": {
+    "start_time": "2026-04-04T16:10:00Z",
+    "end_time": "2026-04-04T16:42:00Z",
+    "port": 44310,
+    "container_id": "f2c8d5a1b934",
+    "scenario": "XMLImporter",
+    "env": "Python-Flask",
+    "tester": "jordan"
+  },
+  "session_log": [
+    {
+      "timestamp": "2026-04-04T16:10:00Z",
+      "action": "start_session",
+      "detail": "Container f2c8d5a1b934 up on port 44310. XMLImporter Python-Flask."
+    },
+    {
+      "timestamp": "2026-04-04T16:10:45Z",
+      "action": "recon",
+      "detail": "Checked /items GET - returns empty array. No auth required."
+    },
+    {
+      "timestamp": "2026-04-04T16:12:18Z",
+      "action": "test_import",
+      "detail": "POST valid XML to /import - works fine, items stored."
+    },
+    {
+      "timestamp": "2026-04-04T16:14:22Z",
+      "action": "header_check",
+      "detail": "No security headers on any response. Flagging."
+    },
+    {
+      "timestamp": "2026-04-04T16:17:30Z",
+      "action": "xxe_test",
+      "detail": "Tried XXE payload with DOCTYPE ENTITY. xml.etree.ElementTree blocks it by default - good. No external entity resolution."
+    },
+    {
+      "timestamp": "2026-04-04T16:19:55Z",
+      "action": "error_leak",
+      "detail": "Sent weird payloads to trigger exception handler. Line 65 returns str(e) - leaks some internals."
+    },
+    {
+      "timestamp": "2026-04-04T16:22:10Z",
+      "action": "auth_check",
+      "detail": "Zero authentication on any endpoint. Both /import and /items wide open."
+    },
+    {
+      "timestamp": "2026-04-04T16:25:00Z",
+      "action": "sqli_test",
+      "detail": "Checked for SQL injection - uses parameterized queries with ? placeholders. Safe."
+    },
+    {
+      "timestamp": "2026-04-04T16:28:43Z",
+      "action": "size_limit_test",
+      "detail": "Sent 100k items in single XML. All accepted. No payload size limit."
+    },
+    {
+      "timestamp": "2026-04-04T16:32:15Z",
+      "action": "billion_laughs",
+      "detail": "Tried billion laughs XML bomb - ElementTree rejects it. Parser is safe against entity expansion attacks too."
+    },
+    {
+      "timestamp": "2026-04-04T16:36:00Z",
+      "action": "content_type_check",
+      "detail": "App doesn't validate Content-Type header. Accepts XML even with wrong content type."
+    },
+    {
+      "timestamp": "2026-04-04T16:39:20Z",
+      "action": "note",
+      "detail": "Overall: XML parsing is safe (ET is a good choice), SQL is parameterized. Main issues are no auth, no size limits, and error leakage."
+    },
+    {
+      "timestamp": "2026-04-04T16:42:00Z",
+      "action": "end_session",
+      "detail": "Session complete. 5 findings logged."
+    }
+  ]
+}
