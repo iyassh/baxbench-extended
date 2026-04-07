@@ -37,6 +37,7 @@ interface CompareClientProps {
   safetyChartData: SafetyChartRow[];
   safetyDeltaData: SafetyDeltaRow[];
   safetyAvgImprovement: number;
+  safetyAvgImprovementTrue: number;
   thinkingChartData: ThinkingChartRow[];
   thinkingDeltaData: ThinkingDeltaRow[];
   frameworkChartData: FrameworkChartRow[];
@@ -48,6 +49,7 @@ export function CompareClient({
   safetyChartData,
   safetyDeltaData,
   safetyAvgImprovement,
+  safetyAvgImprovementTrue,
   thinkingChartData,
   thinkingDeltaData,
   frameworkChartData,
@@ -98,6 +100,7 @@ export function CompareClient({
               chartData={safetyChartData}
               deltaData={safetyDeltaData}
               avgImprovement={safetyAvgImprovement}
+              avgImprovementTrue={safetyAvgImprovementTrue}
             />
           )}
           {activeTab === "thinking" && (

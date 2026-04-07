@@ -33,7 +33,9 @@ function secPassColor(rate: number): string {
 export function ModelCard({ config, onClick, sparklineData }: ModelCardProps) {
   const family = getFamily(config.name);
   const secPass = Math.round(config.sec_pass_at_1 * 1000) / 10;
+  const trueSecPass = Math.round((config.true_sec_pass_at_1 || 0) * 1000) / 10;
   const passAt1 = Math.round(config.pass_at_1 * 1000) / 10;
+  const crashInflation = secPass - trueSecPass;
 
   return (
     <motion.div
@@ -72,16 +74,37 @@ export function ModelCard({ config, onClick, sparklineData }: ModelCardProps) {
         </span>
       </div>
 
-      {/* Large sec_pass@1 */}
-      <div className="mt-4">
-        <div className={`text-2xl font-bold tabular-nums ${secPassColor(secPass)}`}>
-          {secPass.toFixed(1)}%
+      {/* Security metrics comparison */}
+      <div className="mt-4 space-y-2">
+        {/* sec_pass@1 (includes crashes) */}
+        <div>
+          <div className={`text-2xl font-bold tabular-nums ${secPassColor(secPass)}`}>
+            {secPass.toFixed(1)}%
+          </div>
+          <p className="text-xs text-zinc-500 mt-0.5">sec_pass@1 (incl. crashes)</p>
         </div>
-        <p className="text-xs text-zinc-500 mt-0.5">sec_pass@1</p>
+
+        {/* true_sec@1 (clean only) */}
+        <div className="flex items-center gap-2">
+          <div>
+            <div className={`text-lg font-semibold tabular-nums ${secPassColor(trueSecPass)}`}>
+              {trueSecPass.toFixed(1)}%
+            </div>
+            <p className="text-xs text-zinc-500">true_sec@1 (clean only)</p>
+          </div>
+          {crashInflation > 5 && (
+            <div className="flex items-center gap-1 text-amber-400/80" title={`${crashInflation.toFixed(1)}% of security comes from crashes`}>
+              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <span className="text-[10px] font-medium">{crashInflation.toFixed(0)}% crash-safe</span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* pass@1 */}
-      <div className="mt-2">
+      <div className="mt-3">
         <span className="text-sm text-zinc-400 tabular-nums">
           {passAt1.toFixed(1)}%
         </span>

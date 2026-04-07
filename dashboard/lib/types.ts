@@ -9,9 +9,12 @@ export interface ConfigWithStats extends Config {
   total_results: number;
   functional_passes: number;
   secure_passes: number;
+  truly_secure_passes: number;
   total_cwes: number;
   pass_at_1: number;
   sec_pass_at_1: number;
+  true_sec_pass_at_1: number;
+  secure_by_crash: number;
 }
 
 export interface Result {
@@ -97,6 +100,10 @@ export interface DeltaRow {
   comparison: number;
   delta: number;
   delta_pct: number;
+  baseline_true: number;
+  comparison_true: number;
+  delta_true: number;
+  delta_pct_true: number;
 }
 
 export interface CweTreemapItem {

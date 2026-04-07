@@ -52,6 +52,7 @@ export default function OverviewPage() {
     return {
       name: c.name,
       sec_pass_at_1: Math.round(c.sec_pass_at_1 * 1000) / 10,
+      true_sec_pass_at_1: Math.round((c.true_sec_pass_at_1 || 0) * 1000) / 10,
       pass_at_1: Math.round(c.pass_at_1 * 1000) / 10,
       total_cwes: c.total_cwes,
       family,
@@ -128,7 +129,7 @@ export default function OverviewPage() {
 
         {/* ─── Section 2: Stat Cards ─── */}
         <section id="stats">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <StatCard
               title="Total Results"
               value={totalResults}
@@ -141,9 +142,16 @@ export default function OverviewPage() {
               subtitle={`${thinkingCount} thinking / ${standardCount} standard`}
             />
             <StatCard
-              title="Avg Security Rate"
+              title="Avg sec_pass@1"
               value={`${(avgSecRate * 100).toFixed(1)}%`}
               accent="amber"
+              subtitle="Includes crashes"
+            />
+            <StatCard
+              title="Avg true_sec@1"
+              value={`${(configsWithResults.reduce((s, c) => s + (c.true_sec_pass_at_1 || 0), 0) / configCount * 100).toFixed(1)}%`}
+              accent="green"
+              subtitle="Clean tests only"
             />
             <StatCard
               title="CWEs Detected"
@@ -161,7 +169,7 @@ export default function OverviewPage() {
                 Model Security Ranking
               </h2>
               <p className="text-zinc-500 text-sm mt-1">
-                sec_pass@1 across all scenarios
+                Sorted by true_sec@1 (clean tests only) • Amber shows sec_pass@1 (includes crashes)
               </p>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
