@@ -46,7 +46,7 @@
     {
       "name": "Storable and Cacheable Content",
       "riskdesc": "Informational (Medium)",
-      "cweid": "524",
+      "cweid": "693",
       "count": "1",
       "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content b"
     }
