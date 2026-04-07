@@ -66,14 +66,14 @@
     {
       "name": "Server Leaks Version Information via \"Server\" HTTP Response Header Field",
       "riskdesc": "Low (High)",
-      "cweid": "497",
+      "cweid": "209",
       "count": "3",
       "solution": "<p>Ensure that your web server, application server, load balancer, etc. is configured to suppress the \"Server\" header or provide generic details.</p>"
     },
     {
       "name": "Storable and Cacheable Content",
       "riskdesc": "Informational (Medium)",
-      "cweid": "524",
+      "cweid": "693",
       "count": "3",
       "solution": "<p>Validate that the response does not contain sensitive, personal or user-specific information. If it does, consider the use of the following HTTP response headers, to limit, or prevent the content b"
     }
