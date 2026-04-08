@@ -180,7 +180,7 @@ export default function OverviewPage() {
                 Sorted by true_sec@1 (clean tests only) • Amber shows sec_pass@1 (includes crashes)
               </p>
             </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 overflow-hidden" style={{ maxHeight: "800px" }}>
               <ModelRankingChart data={rankingData} />
             </div>
           </section>
@@ -197,7 +197,7 @@ export default function OverviewPage() {
                 CWE occurrences by model and scenario
               </p>
             </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 overflow-auto" style={{ maxHeight: "700px" }}>
               <VulnerabilityHeatmap
                 data={heatmapRaw}
                 models={heatmapModels}
