@@ -5,7 +5,6 @@ import type { ResultWithCwes } from "@/lib/types";
 import { PromptTab } from "@/components/deep-dive/prompt-tab";
 import { CodeTab } from "@/components/deep-dive/code-tab";
 import { LogsTab } from "@/components/deep-dive/logs-tab";
-import { PreviewTab } from "@/components/deep-dive/preview-tab";
 import { VulnerabilitiesTab } from "@/components/deep-dive/vulnerabilities-tab";
 import { cn } from "@/lib/utils";
 
@@ -19,7 +18,6 @@ const tabs = [
   { id: "prompt", label: "Prompt" },
   { id: "code", label: "Code" },
   { id: "logs", label: "Logs" },
-  { id: "preview", label: "Live Preview" },
   { id: "vulnerabilities", label: "Vulnerabilities" },
 ] as const;
 
@@ -103,10 +101,7 @@ export function ResultDeepDive({ result, configName, onClose }: ResultDeepDivePr
         {activeTab === "prompt" && <PromptTab configName={configName} resultId={result.id} />}
         {activeTab === "code" && <CodeTab configName={configName} resultId={result.id} />}
         {activeTab === "logs" && <LogsTab configName={configName} resultId={result.id} />}
-        {activeTab === "preview" && (
-          <PreviewTab resultId={result.id} framework={result.framework} scenario={result.scenario} />
-        )}
-        {activeTab === "vulnerabilities" && (
+{activeTab === "vulnerabilities" && (
           <VulnerabilitiesTab cwes={result.cwes} />
         )}
       </div>
