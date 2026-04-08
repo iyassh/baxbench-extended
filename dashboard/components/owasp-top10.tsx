@@ -34,7 +34,7 @@ const OWASP_2025: OwaspCategory[] = [
   {
     id: "A03",
     name: "Injection",
-    cwes: [79, 89, 78, 94, 117, 22, 611],
+    cwes: [79, 89, 78, 94, 117, 22, 611, 20],
     description: "User-supplied data is sent to an interpreter as part of a command or query",
   },
   {
