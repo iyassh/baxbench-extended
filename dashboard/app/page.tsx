@@ -4,21 +4,18 @@ import {
   getCwesWithStats,
   getInsights,
   getHeatmapData,
-  getSafetyPromptComparison,
 } from "@/lib/queries";
 import { StatCard } from "@/components/stat-card";
 import { PageTransition } from "@/components/page-transition";
 import { InsightPills } from "@/components/insight-pills";
 import { ModelRankingChart } from "@/components/charts/model-ranking-chart";
 import { VulnerabilityHeatmap } from "@/components/charts/vulnerability-heatmap";
-import { SafetyComparisonChart } from "@/components/charts/safety-comparison-chart";
 
 export default function OverviewPage() {
   const configs = getAllConfigs();
   const cwes = getCwesWithStats();
   const insights = getInsights();
   const heatmapRaw = getHeatmapData();
-  const safetyRaw = getSafetyPromptComparison();
 
   const configsWithResults = configs.filter((c) => c.total_results > 0);
   const totalResults = configsWithResults.reduce(
@@ -66,41 +63,6 @@ export default function OverviewPage() {
     ...new Set(heatmapRaw.map((h) => h.scenario)),
   ].sort();
 
-  // --- Safety comparison data ---
-  const safetyByConfig = new Map<
-    string,
-    { none: number; generic: number; specific: number }
-  >();
-
-  for (const row of safetyRaw) {
-    if (!safetyByConfig.has(row.config_name)) {
-      safetyByConfig.set(row.config_name, {
-        none: 0,
-        generic: 0,
-        specific: 0,
-      });
-    }
-    const entry = safetyByConfig.get(row.config_name)!;
-    const rate = row.total > 0 ? (row.secure_passes / row.total) * 100 : 0;
-    if (row.safety_prompt === "none") entry.none = Math.round(rate * 10) / 10;
-    else if (row.safety_prompt === "generic")
-      entry.generic = Math.round(rate * 10) / 10;
-    else if (row.safety_prompt === "specific")
-      entry.specific = Math.round(rate * 10) / 10;
-  }
-
-  const safetyData = Array.from(safetyByConfig.entries()).map(
-    ([config, vals]) => ({
-      config,
-      ...vals,
-    })
-  );
-
-  // --- Top CWE badges ---
-  const topCwes = [...cwes]
-    .filter((c) => c.occurrence_count > 0)
-    .sort((a, b) => b.occurrence_count - a.occurrence_count)
-    .slice(0, 8);
 
   return (
     <PageTransition>
@@ -199,43 +161,89 @@ export default function OverviewPage() {
           </section>
         )}
 
-        {/* ─── Section 5: Safety Prompt Impact ─── */}
-        {safetyData.length > 0 && (
-          <section id="safety">
-            <div className="mb-6">
-              <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight">
-                Safety Prompt Impact
-              </h2>
-              <p className="text-zinc-500 text-sm mt-1">
-                sec_pass@1 by safety prompt level
-              </p>
-            </div>
-            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-              <SafetyComparisonChart data={safetyData} />
-            </div>
-
-            {/* CWE badges */}
-            {topCwes.length > 0 && (
-              <div className="mt-6">
-                <p className="text-xs text-zinc-500 uppercase tracking-wider mb-3">
-                  Top Vulnerabilities
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {topCwes.map((cwe) => (
-                    <Link
-                      key={cwe.num}
-                      href={`/vulnerabilities?cwe=${cwe.num}`}
-                      className="rounded-full bg-red-500/10 border border-red-500/20 text-red-400 text-xs px-3 py-1 hover:bg-red-500/20 transition-colors"
-                    >
-                      CWE-{cwe.num}{" "}
-                      <span className="text-red-400/70">{cwe.name}</span>
-                    </Link>
-                  ))}
-                </div>
+        {/* ─── Section 5: Pentest Highlights ─── */}
+        <section id="pentest-highlights">
+          <div className="mb-6">
+            <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight">
+              Pentest Highlights
+            </h2>
+            <p className="text-zinc-500 text-sm mt-1">
+              Manual penetration testing validates automated results
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3">
+              <div className="w-2 h-10 rounded-full bg-emerald-500 shrink-0" />
+              <div>
+                <p className="text-lg font-semibold text-emerald-400 tabular-nums">41 manual findings</p>
+                <p className="text-xs text-zinc-500">Across 10 apps</p>
               </div>
-            )}
-          </section>
-        )}
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3">
+              <div className="w-2 h-10 rounded-full bg-red-500 shrink-0" />
+              <div>
+                <p className="text-lg font-semibold text-red-400 tabular-nums">14.3% ZAP agreement</p>
+                <p className="text-xs text-zinc-500">Proves BaxBench value</p>
+              </div>
+            </div>
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3">
+              <div className="w-2 h-10 rounded-full bg-amber-500 shrink-0" />
+              <div>
+                <p className="text-lg font-semibold text-amber-400 tabular-nums">100% precision, 27% recall</p>
+                <p className="text-xs text-zinc-500">ZAP scanner accuracy</p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ─── Section 6: Quick Links ─── */}
+        <section id="quick-links">
+          <div className="mb-6">
+            <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight">
+              Explore
+            </h2>
+            <p className="text-zinc-500 text-sm mt-1">
+              Dive deeper into the data
+            </p>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <Link
+              href="/models"
+              className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all group"
+            >
+              <p className="font-semibold text-zinc-100 group-hover:text-emerald-400 transition-colors">Explore Models</p>
+              <p className="text-xs text-zinc-500 mt-1">Per-model security breakdown</p>
+            </Link>
+            <Link
+              href="/compare"
+              className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all group"
+            >
+              <p className="font-semibold text-zinc-100 group-hover:text-emerald-400 transition-colors">Compare Safety Prompts</p>
+              <p className="text-xs text-zinc-500 mt-1">None vs generic vs specific</p>
+            </Link>
+            <Link
+              href="/vulnerabilities"
+              className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all group"
+            >
+              <p className="font-semibold text-zinc-100 group-hover:text-emerald-400 transition-colors">View All CWEs</p>
+              <p className="text-xs text-zinc-500 mt-1">Full vulnerability catalog</p>
+            </Link>
+            <Link
+              href="/pentest"
+              className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all group"
+            >
+              <p className="font-semibold text-zinc-100 group-hover:text-emerald-400 transition-colors">Manual Pentest Results</p>
+              <p className="text-xs text-zinc-500 mt-1">Human vs ZAP vs BaxBench</p>
+            </Link>
+            <Link
+              href="/results"
+              className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all group"
+            >
+              <p className="font-semibold text-zinc-100 group-hover:text-emerald-400 transition-colors">Browse Test Results</p>
+              <p className="text-xs text-zinc-500 mt-1">Individual test details</p>
+            </Link>
+          </div>
+        </section>
       </div>
     </PageTransition>
   );

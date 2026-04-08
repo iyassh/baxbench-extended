@@ -34,6 +34,7 @@ export function loadSafetyComparison() {
     total: number;
     functional_passes: number;
     secure_passes: number;
+    truly_secure_passes: number;
   }[]>("safety-comparison");
 }
 
