@@ -17,8 +17,18 @@ interface ModelRankingData {
   secure_passes?: number;
 }
 
+interface SafetyRow {
+  config_name: string;
+  safety_prompt: string;
+  total: number;
+  functional_passes: number;
+  secure_passes: number;
+  truly_secure_passes: number;
+}
+
 interface ModelRankingChartProps {
   data: ModelRankingData[];
+  safetyData?: SafetyRow[];
 }
 
 const familyColors: Record<string, { solid: string; light: string }> = {
@@ -38,10 +48,33 @@ function getBarColor(family: string, thinking: boolean): string {
   return thinking ? colors.light : colors.solid;
 }
 
-export function ModelRankingChart({ data }: ModelRankingChartProps) {
-  const [sortBy, setSortBy] = useState<SortKey>("sec_pass");
+type PromptFilter = "all" | "none" | "generic" | "specific";
 
-  const sorted = [...data].sort((a, b) => {
+export function ModelRankingChart({ data, safetyData }: ModelRankingChartProps) {
+  const [sortBy, setSortBy] = useState<SortKey>("sec_pass");
+  const [promptFilter, setPromptFilter] = useState<PromptFilter>("all");
+
+  // When a prompt filter is active, recalculate metrics from safetyData
+  const displayData = data.map((model) => {
+    if (promptFilter === "all" || !safetyData) return model;
+
+    const row = safetyData.find(
+      (s) => s.config_name === model.name && s.safety_prompt === promptFilter
+    );
+    if (!row) return { ...model, sec_pass_at_1: 0, true_sec_pass_at_1: 0, pass_at_1: 0, total_cwes: 0, functional_passes: 0, secure_passes: 0 };
+
+    return {
+      ...model,
+      sec_pass_at_1: row.total > 0 ? Math.round((row.secure_passes / row.total) * 1000) / 10 : 0,
+      true_sec_pass_at_1: row.total > 0 ? Math.round((row.truly_secure_passes / row.total) * 1000) / 10 : 0,
+      pass_at_1: row.total > 0 ? Math.round((row.functional_passes / row.total) * 1000) / 10 : 0,
+      functional_passes: row.functional_passes,
+      secure_passes: row.secure_passes,
+      total_results: row.total,
+    };
+  });
+
+  const sorted = [...displayData].sort((a, b) => {
     const aSecWorking = (a.functional_passes || 1) > 0 ? ((a.secure_passes || 0) / (a.functional_passes || 1)) : 0;
     const bSecWorking = (b.functional_passes || 1) > 0 ? ((b.secure_passes || 0) / (b.functional_passes || 1)) : 0;
     switch (sortBy) {
@@ -81,23 +114,46 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
     >
-      {/* Sort controls */}
-      <div className="flex items-center gap-2 mb-4 flex-wrap">
-        <span className="text-xs text-zinc-500 uppercase tracking-wider">Sort by:</span>
-        {sortButtons.map((btn) => (
-          <button
-            key={btn.key}
-            onClick={() => setSortBy(btn.key)}
-            className={cn(
-              "px-3 py-1 rounded-full text-xs font-medium transition-colors",
-              sortBy === btn.key
-                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
-                : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600"
-            )}
-          >
-            {btn.label}
-          </button>
-        ))}
+      {/* Controls */}
+      <div className="flex flex-col gap-3 mb-4">
+        {/* Safety prompt filter */}
+        {safetyData && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-xs text-zinc-500 uppercase tracking-wider">Safety Prompt:</span>
+            {(["all", "none", "generic", "specific"] as PromptFilter[]).map((p) => (
+              <button
+                key={p}
+                onClick={() => setPromptFilter(p)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium transition-colors",
+                  promptFilter === p
+                    ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                    : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600"
+                )}
+              >
+                {p === "all" ? "All Combined" : p.charAt(0).toUpperCase() + p.slice(1)}
+              </button>
+            ))}
+          </div>
+        )}
+        {/* Sort controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="text-xs text-zinc-500 uppercase tracking-wider">Sort by:</span>
+          {sortButtons.map((btn) => (
+            <button
+              key={btn.key}
+              onClick={() => setSortBy(btn.key)}
+              className={cn(
+                "px-3 py-1 rounded-full text-xs font-medium transition-colors",
+                sortBy === btn.key
+                  ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                  : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600"
+              )}
+            >
+              {btn.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Table */}

@@ -4,6 +4,7 @@ import {
   getCwesWithStats,
   getInsights,
   getHeatmapData,
+  getSafetyPromptComparison,
 } from "@/lib/queries";
 import { loadResultsByConfig } from "@/lib/data";
 import { StatCard } from "@/components/stat-card";
@@ -18,6 +19,7 @@ export default function OverviewPage() {
   const cwes = getCwesWithStats();
   const insights = getInsights();
   const heatmapRaw = getHeatmapData();
+  const safetyData = getSafetyPromptComparison();
 
   const configsWithResults = configs.filter((c) => c.total_results > 0);
   const totalResults = configsWithResults.reduce(
@@ -184,7 +186,7 @@ export default function OverviewPage() {
               </p>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 overflow-hidden" style={{ maxHeight: "800px" }}>
-              <ModelRankingChart data={rankingData} />
+              <ModelRankingChart data={rankingData} safetyData={safetyData} />
             </div>
           </section>
         )}
