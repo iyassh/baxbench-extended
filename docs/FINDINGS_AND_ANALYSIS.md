@@ -88,8 +88,18 @@ Generic:  Confused code → works less (23%) → still not secure (0.3%)
 Specific: Complex code → works rarely (14%) → but 70.5% secure when it works
 ```
 
+### Two Ways To Measure The Same Improvement
+Both numbers below are true — they use different denominators:
+
+| Metric | None → Specific | Improvement | Denominator |
+|---|---|---|---|
+| **sec_pass@1** | 0.26% → 9.73% | **37x** | All tests (including crashes) |
+| **Sec(Working)** | 0.5% → 70.5% | **141x** | Only functional apps |
+
+Use sec_pass@1 (37x) for conservative claims. Use Sec(Working) (141x) for the dramatic impact. Both are from the same database — the difference is whether you count crashed apps in the denominator.
+
 ### What This Tells The Professor
-> Specific safety prompts are the single most effective mitigation strategy. They increase security of working code from 0.5% to 70.5% — a 141x improvement. Vague instructions are worse than useless. This is an immediately actionable recommendation for any organization using AI code generation.
+> Specific safety prompts are the single most effective mitigation strategy. sec_pass@1 improves 37x (0.26% → 9.73%). Among working code, security jumps from 0.5% to 70.5% (141x). Vague instructions are worse than useless. This is an immediately actionable recommendation for any organization using AI code generation.
 
 ---
 
