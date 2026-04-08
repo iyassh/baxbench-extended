@@ -107,7 +107,7 @@ export function FrameworksTab({ chartData, summaries }: FrameworksTabProps) {
               tickLine={{ stroke: "#3f3f46" }}
             />
             <YAxis
-              domain={[0, 100]}
+              domain={[0, "auto"]}
               tick={{ fill: "#a1a1aa", fontSize: 12 }}
               tickFormatter={(v) => `${v}%`}
               axisLine={{ stroke: "#3f3f46" }}
