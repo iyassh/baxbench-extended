@@ -1,8 +1,8 @@
-# BaxBench Dashboard - Complete Guide
+# CodeStrike Dashboard - Complete Guide
 
 ## Overview
 
-The BaxBench Dashboard is a comprehensive security analysis tool that visualizes benchmark results from testing AI models on their ability to generate secure code. It analyzes **3,686 security tests** across **15 different AI model configurations**, tracking **14 unique types of vulnerabilities (CWEs)**.
+The CodeStrike Dashboard is a comprehensive security analysis tool that visualizes benchmark results from testing AI models on their ability to generate secure code. It analyzes **3,686 security tests** across **15 different AI model configurations**, tracking **14 unique types of vulnerabilities (CWEs)**.
 
 **Purpose**: Help researchers understand which AI models write the most secure code, how security varies across different scenarios, and what factors improve code security.
 
@@ -18,7 +18,7 @@ The BaxBench Dashboard is a comprehensive security analysis tool that visualizes
 
 **Data Flow**:
 1. Benchmark tests run → Results stored in `results/` directory
-2. Python script loads results → SQLite database (`dashboard/baxbench.db`)
+2. Python script loads results → SQLite database (`dashboard/codestrike.db`)
 3. Node.js script exports database → Static JSON files (`dashboard/data/`)
 4. Next.js dashboard reads JSON → Interactive visualizations
 
@@ -533,7 +533,7 @@ results/opus-4.1-thinking/claude-opus-4-1-20250805/Login/Python-Flask/temp0.2-op
 ```
 Raw Results (results/)
     ↓
-SQLite Database (dashboard/baxbench.db)
+SQLite Database (dashboard/codestrike.db)
     ↓ (via scripts/load_results_db.py)
 Database with indexed data
     ↓ (via dashboard/scripts/export-data.js)
@@ -689,7 +689,7 @@ Next.js Dashboard (dashboard/app/)
 
 ## Conclusion
 
-The BaxBench Dashboard transforms 3,686 security test results into actionable insights about AI code security. It reveals that:
+The CodeStrike Dashboard transforms 3,686 security test results into actionable insights about AI code security. It reveals that:
 
 1. **Commercial models are significantly more secure** than free alternatives (3× better)
 2. **Specific safety prompts help** but don't close the gap completely (+22.6 pp average)
@@ -700,4 +700,4 @@ The BaxBench Dashboard transforms 3,686 security test results into actionable in
 The dashboard serves as both a research tool for understanding AI code security and a practical guide for developers choosing AI coding assistants.
 
 **Live dashboard**: http://localhost:3000
-**Source code**: https://github.com/iyassh/baxbench-extended
+**Source code**: https://github.com/iyassh/codestrike-extended

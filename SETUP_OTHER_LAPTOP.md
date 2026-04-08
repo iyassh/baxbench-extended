@@ -1,10 +1,10 @@
-# Running BaxBench with Ollama on Another Laptop
+# Running CodeStrike with Ollama on Another Laptop
 
 **Last Updated:** March 25, 2026
-**Repository:** https://github.com/iyassh/baxbench-extended
+**Repository:** https://github.com/iyassh/codestrike-extended
 **Latest Commit:** 668b8cc (DeepSeek integration + Dashboard fixes)
 
-This guide shows how to set up and run BaxBench security benchmarks with free Ollama models on a different laptop.
+This guide shows how to set up and run CodeStrike security benchmarks with free Ollama models on a different laptop.
 
 ## ✅ What's Already in the Repository
 
@@ -14,7 +14,7 @@ The following has been completed and pushed to git:
 - ✅ **DeepSeek benchmark complete** - 252 test results at 42.9% sec_pass@1
 - ✅ **Dashboard fixed** - sec_pass@1 now correctly calculates security-only metric
 - ✅ **Full documentation** - Setup guides, analysis, and technical details
-- ✅ **Database with results** - `dashboard/baxbench.db` includes all benchmark data
+- ✅ **Database with results** - `dashboard/codestrike.db` includes all benchmark data
 - ✅ **Automated scripts** - `scripts/run_deepseek_full_benchmark.sh` and more
 
 **Current Status:**
@@ -36,8 +36,8 @@ The following has been completed and pushed to git:
 ```bash
 # On your other laptop
 cd ~/Documents  # or your preferred location
-git clone https://github.com/iyassh/baxbench-extended.git
-cd baxbench-extended
+git clone https://github.com/iyassh/codestrike-extended.git
+cd codestrike-extended
 
 # Verify you have the latest code
 git pull origin main
@@ -49,15 +49,15 @@ git log --oneline -3
 ```bash
 # On current laptop (compress the project)
 cd ~/
-tar -czf baxbench-extended.tar.gz baxbench-extended/ \
+tar -czf codestrike-extended.tar.gz codestrike-extended/ \
   --exclude='node_modules' \
   --exclude='results/*' \
   --exclude='dashboard/.next'
 
-# Transfer baxbench-extended.tar.gz to other laptop, then:
+# Transfer codestrike-extended.tar.gz to other laptop, then:
 # On other laptop
-tar -xzf baxbench-extended.tar.gz
-cd baxbench-extended
+tar -xzf codestrike-extended.tar.gz
+cd codestrike-extended
 ```
 
 ## Step 2: Configure Anthropic API Key (Optional)
@@ -114,7 +114,7 @@ curl http://localhost:11434/api/tags
 ## Step 4: Install Python Dependencies
 
 ```bash
-cd ~/baxbench-extended
+cd ~/codestrike-extended
 
 # Install required Python packages
 python3 -m pip install --break-system-packages \
@@ -182,7 +182,7 @@ Open http://localhost:3000 in your browser. You should see:
 
 ### Quick Test (1 scenario, ~5 minutes)
 ```bash
-cd ~/baxbench-extended
+cd ~/codestrike-extended
 
 python3 src/main.py \
   --models deepseek-coder:6.7b \
@@ -341,12 +341,12 @@ PYTHON
 
 ```bash
 # On your other laptop (compress results)
-cd ~/baxbench-extended
+cd ~/codestrike-extended
 tar -czf results-ollama.tar.gz results/
 
 # Transfer results-ollama.tar.gz back to main laptop, then:
 # On main laptop
-cd ~/baxbench-extended
+cd ~/codestrike-extended
 tar -xzf results-ollama.tar.gz
 python3 scripts/load_results_db.py
 cd dashboard && npm run dev
@@ -481,5 +481,5 @@ Visit https://ollama.com/library for full model catalog.
 ## Questions?
 
 - Ollama docs: https://github.com/ollama/ollama
-- BaxBench paper: Check repo README
+- CodeStrike paper: Check repo README
 - Model comparison: Visit dashboard after loading results

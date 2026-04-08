@@ -2,7 +2,7 @@
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Redesign the BaxBench Security Dashboard into a polished, dark-themed analytics tool with full interactivity, animated charts, and auto-generated insights.
+**Goal:** Redesign the CodeStrike Security Dashboard into a polished, dark-themed analytics tool with full interactivity, animated charts, and auto-generated insights.
 
 **Architecture:** Dark-first Next.js 16 app using Server Components for data, Client Components for interactivity. framer-motion for animations, recharts for charts, cmdk for command palette, shadcn/ui for primitives. 4-page structure: Overview, Models, Vulnerabilities, Compare. Slide-out panels instead of deep page navigation.
 
@@ -435,7 +435,7 @@ git commit -m "feat: new query functions for heatmap, insights, radar, treemap, 
 
 **Step 1: Rewrite the overview page header**
 
-- "BaxBench Security Dashboard" as large heading
+- "CodeStrike Security Dashboard" as large heading
 - Animated tagline with counters: "13 model configurations / 3,276 test results"
 - Insight pills bar below: 3-4 auto-generated insights from `getInsights()`
 - Each pill: subtle colored background, staggered animation on mount

@@ -1,8 +1,8 @@
-# BaxBench Extended — 30-Minute Presentation Guide
+# CodeStrike Extended — 30-Minute Presentation Guide
 
 ## Slide 1: Title (30 seconds)
 
-**"BaxBench Extended: Can AI Write Secure Code?"**
+**"CodeStrike Extended: Can AI Write Secure Code?"**
 - A security benchmark for AI-generated web applications
 - Automated testing + OWASP ZAP validation + Manual penetration testing
 
@@ -25,7 +25,7 @@
 
 ---
 
-## Slide 3: BaxBench Architecture (3 minutes)
+## Slide 3: CodeStrike Architecture (3 minutes)
 
 **The pipeline:**
 
@@ -233,8 +233,8 @@ Three layers run on every app:
 
 ### Why we tested with ZAP
 - OWASP ZAP is the industry-standard web vulnerability scanner
-- We wanted to validate: "Are BaxBench's findings real, or false positives?"
-- Also wanted to answer: "Could you just use ZAP instead of BaxBench?"
+- We wanted to validate: "Are CodeStrike's findings real, or false positives?"
+- Also wanted to answer: "Could you just use ZAP instead of CodeStrike?"
 
 ### We tried ZAP three ways:
 
@@ -247,7 +247,7 @@ Three layers run on every app:
 ### Agreement: 14.3% across ALL modes
 
 ### Why ZAP fails on AI-generated APIs:
-| What BaxBench does | What ZAP cannot do |
+| What CodeStrike does | What ZAP cannot do |
 |--------------------|--------------------|
 | Accesses Docker DB to check password hashing | Can't access database inside container |
 | Sends JSON payloads in correct fields | XSS scanner expects HTML forms, not JSON |
@@ -256,9 +256,9 @@ Three layers run on every app:
 | Understands auth logic for IDOR testing | Can't understand user ownership |
 
 ### What this proves:
-- BaxBench has **100% precision** — everything it finds is a real vulnerability
-- ZAP validates only 14.3% of BaxBench's findings
-- BaxBench is NOT redundant with existing tools — it catches things ZAP fundamentally cannot
+- CodeStrike has **100% precision** — everything it finds is a real vulnerability
+- ZAP validates only 14.3% of CodeStrike's findings
+- CodeStrike is NOT redundant with existing tools — it catches things ZAP fundamentally cannot
 
 ---
 
@@ -271,7 +271,7 @@ Three layers run on every app:
 - ~30 minutes per app: setup → ZAP scan → manual testing → evidence collection
 
 ### Tools used:
-- BaxBench pentest CLI (`python src/main.py --mode pentest`)
+- CodeStrike pentest CLI (`python src/main.py --mode pentest`)
 - OWASP ZAP (Docker container)
 - curl for manual HTTP requests
 
@@ -287,11 +287,11 @@ Three layers run on every app:
 | Metric | Value |
 |--------|-------|
 | Total manual findings | 41 |
-| BaxBench also found (True Positives) | 11 (27%) |
-| BaxBench missed (False Negatives) | 30 (73%) |
-| BaxBench false positives | 0 (100% precision) |
+| CodeStrike also found (True Positives) | 11 (27%) |
+| CodeStrike missed (False Negatives) | 30 (73%) |
+| CodeStrike false positives | 0 (100% precision) |
 
-### What manual testing found that BaxBench missed:
+### What manual testing found that CodeStrike missed:
 - **Hardcoded JWT secrets** (CWE-798) — in 5/10 apps, 0% automated detection
 - **Missing authentication** (CWE-284) — in 5/10 apps, 0% detection
 - **Race conditions** (CWE-400) — concurrent requests could double-process orders
@@ -312,12 +312,12 @@ Three layers run on every app:
 | Method | Precision | Recall | Best at |
 |--------|-----------|--------|---------|
 | OWASP ZAP | 100% | ~5% | Missing HTTP headers only |
-| BaxBench Automated | 100% | 27% | Injection attacks, session issues, password hashing |
+| CodeStrike Automated | 100% | 27% | Injection attacks, session issues, password hashing |
 | Manual Testing | 100% | 100% (baseline) | Hardcoded secrets, auth logic, business rules, race conditions |
 
 ### CWE detection by method:
 
-| CWE | BaxBench | ZAP | Manual | What it takes |
+| CWE | CodeStrike | ZAP | Manual | What it takes |
 |-----|----------|-----|--------|--------------|
 | CWE-693 Headers | 80% | 100% | 100% | Any scanner |
 | CWE-352 CSRF | 100% | 0% | 100% | Understands auth context |
@@ -339,7 +339,7 @@ Three layers run on every app:
 3. **Use thinking-mode models** when security matters (opus-4.1-thinking best)
 4. **Don't rely on scanners alone** — ZAP catches only 14.3%
 
-### For improving BaxBench:
+### For improving CodeStrike:
 1. **Add SAST check for hardcoded secrets** — would catch 5 more vulns across tested apps
 2. **Add authentication presence check** — 0% detection currently
 3. **Handle crashed apps** — still run SAST when dynamic tests fail
@@ -359,8 +359,8 @@ Three layers run on every app:
 ### Dashboard pages to show:
 1. **Overview** — Model rankings bar chart, vulnerability heatmap
 2. **Models** — Click into opus-4.1-thinking to show best model stats
-3. **Pentest** — 3-way comparison chart (BaxBench vs ZAP vs Manual)
-4. **Pentest** (scroll) — ZAP Active Scan Validation section, "Why BaxBench Catches More"
+3. **Pentest** — 3-way comparison chart (CodeStrike vs ZAP vs Manual)
+4. **Pentest** (scroll) — ZAP Active Scan Validation section, "Why CodeStrike Catches More"
 5. **Results** — Full results table with safety prompt impact
 6. **Vulnerabilities** — CWE heatmap showing CWE-693 dominates
 
@@ -388,10 +388,10 @@ A: Because we test 39 CWE types. Even if a model handles SQLi correctly, it migh
 A: If you're using AI to generate code: (1) always use specific security prompts, (2) always review the code, (3) automated scanners aren't enough. Our benchmark gives you the data to make these decisions per model.
 
 **Q: How is this different from existing AI code security research?**
-A: Most studies test individual vulnerabilities in isolation. BaxBench tests full working applications across 28 real-world scenarios, 3 frameworks, with multiple samples for statistical rigor. It also includes the 3-layer validation (automated + ZAP + manual) that no other benchmark does.
+A: Most studies test individual vulnerabilities in isolation. CodeStrike tests full working applications across 28 real-world scenarios, 3 frameworks, with multiple samples for statistical rigor. It also includes the 3-layer validation (automated + ZAP + manual) that no other benchmark does.
 
 **Q: Why didn't ZAP find XSS even with the OpenAPI spec?**
-A: ZAP's XSS scanner looks for reflected HTML output — it sends `<script>alert(1)</script>` and checks if the response contains unescaped HTML. Our apps return JSON (`{"error": "invalid input"}`) so ZAP's reflected XSS check passes even when the stored data is vulnerable. BaxBench's tests submit XSS payloads, then retrieve the data and check if it's stored unescaped.
+A: ZAP's XSS scanner looks for reflected HTML output — it sends `<script>alert(1)</script>` and checks if the response contains unescaped HTML. Our apps return JSON (`{"error": "invalid input"}`) so ZAP's reflected XSS check passes even when the stored data is vulnerable. CodeStrike's tests submit XSS payloads, then retrieve the data and check if it's stored unescaped.
 
 **Q: Could you improve ZAP's detection with custom rules?**
 A: Partially. You could write custom ZAP scripts for JSON-based XSS detection. But you still can't test password hashing (needs DB access), rate limiting (needs sequential requests), IDOR (needs multi-user context), or business logic (needs domain understanding). These are architectural limitations, not configuration issues.

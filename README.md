@@ -1,8 +1,8 @@
-# BaxBench Security Benchmark Dashboard
+# CodeStrike Security Benchmark Dashboard
 
 **COMP 4210 — Ethical Hacking | Group 8**
 
-A security benchmark analysis of 13 Claude model configurations using the [BaxBench](https://baxbench.com) framework. Tests code generation across 28 security-critical scenarios, 3 web frameworks, and 3 safety prompt levels.
+A security benchmark analysis of 13 Claude model configurations using the [CodeStrike](https://codestrike.com) framework. Tests code generation across 28 security-critical scenarios, 3 web frameworks, and 3 safety prompt levels.
 
 ## Key Findings
 
@@ -29,11 +29,11 @@ A security benchmark analysis of 13 Claude model configurations using the [BaxBe
 ## Project Structure
 
 ```
-baxbench/
+codestrike/
   dashboard/          # Next.js security dashboard
   results/            # Benchmark results (13 configs x 252 tests each)
   scripts/            # Benchmark runner scripts
-  src/                # BaxBench source (scenarios, tests, CWE definitions)
+  src/                # CodeStrike source (scenarios, tests, CWE definitions)
   docs/plans/         # Design documents
 ```
 
@@ -59,7 +59,7 @@ npm run dev
 
 Visit [http://localhost:3000](http://localhost:3000)
 
-The dashboard reads from `dashboard/baxbench.db` (SQLite, included in repo). No additional setup needed.
+The dashboard reads from `dashboard/codestrike.db` (SQLite, included in repo). No additional setup needed.
 
 ### Dashboard Pages
 
@@ -97,11 +97,11 @@ pipenv run python src/main.py \
 
 **Dashboard:** Next.js 16, React 19, Tailwind CSS v4, shadcn/ui, Recharts, Framer Motion, better-sqlite3
 
-**Benchmark:** Python 3.12, BaxBench framework, Docker, Claude API
+**Benchmark:** Python 3.12, CodeStrike framework, Docker, Claude API
 
 ## Based On
 
-This project extends the [BaxBench](https://baxbench.com) benchmark framework ([paper](https://arxiv.org/abs/2502.11844)) for security test scenarios and evaluation.
+This project extends the [CodeStrike](https://codestrike.com) benchmark framework ([paper](https://arxiv.org/abs/2502.11844)) for security test scenarios and evaluation.
 
 ## License
 

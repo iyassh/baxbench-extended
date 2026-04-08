@@ -78,7 +78,7 @@ Claude Sonnet 4.5 (thinking):
 ### ✅ YES - The Tests Are Highly Accurate
 
 #### 1. **Academic Validation**
-- BaxBench is a **peer-reviewed research framework**
+- CodeStrike is a **peer-reviewed research framework**
 - Published in academic security conferences
 - Used by researchers to evaluate AI model security
 - Based on OWASP Top 10 and CWE standards
@@ -111,7 +111,7 @@ Claude Sonnet 4.5 (thinking):
 
 ### Accuracy Breakdown:
 
-#### What BaxBench Gets Right (High Confidence):
+#### What CodeStrike Gets Right (High Confidence):
 - ✅ **Missing Security Headers** (CWE-693): 99% accurate
 - ✅ **SQL Injection** (CWE-89): 95% accurate
 - ✅ **Path Traversal** (CWE-22): 95% accurate
@@ -237,10 +237,10 @@ Based on similar benchmarks (from research papers):
 - Use results as **initial screening**
 - Always do **manual security review**
 - Consider **penetration testing** for critical apps
-- BaxBench tests ~10% of all possible vulnerabilities
+- CodeStrike tests ~10% of all possible vulnerabilities
 
 ### ❌ NO - As Sole Security Assessment:
-- Don't deploy code **only** because it passed BaxBench
+- Don't deploy code **only** because it passed CodeStrike
 - Not a replacement for **security audits**
 - Doesn't test: authentication logic, authorization, session management, crypto, etc.
 
@@ -274,7 +274,7 @@ Based on similar benchmarks (from research papers):
 
 ## References
 
-- BaxBench Paper: [Original research paper]
+- CodeStrike Paper: [Original research paper]
 - CWE Database: https://cwe.mitre.org/
 - OWASP Top 10: https://owasp.org/www-project-top-ten/
 - Security Testing Guide: https://owasp.org/www-project-web-security-testing-guide/
@@ -282,5 +282,5 @@ Based on similar benchmarks (from research papers):
 ---
 
 *Generated: March 25, 2026*
-*Project: BaxBench-Extended Security Benchmark*
+*Project: CodeStrike-Extended Security Benchmark*
 *Course: COMP 4210 - Ethical Hacking*

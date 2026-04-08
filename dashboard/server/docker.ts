@@ -5,7 +5,7 @@ import net from "net";
 
 const activeContainers = new Map<string, { port: number; containerId: string }>();
 
-// Manifest files that BaxBench injects during build (not in code/ dir)
+// Manifest files that CodeStrike injects during build (not in code/ dir)
 const MANIFEST_FILES: Record<string, Record<string, string>> = {
   "Python-Flask": {
     "requirements.txt": `flask

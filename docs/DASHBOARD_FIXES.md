@@ -204,7 +204,7 @@ Database Reality:
 
 ## Why the Original Logic Was Wrong
 
-### Metric Definitions (BaxBench Framework)
+### Metric Definitions (CodeStrike Framework)
 
 **pass@1** (Functional Correctness):
 - Definition: Percentage of scenarios where ALL functional tests pass
@@ -257,7 +257,7 @@ This creates a third metric: "**functionally correct AND secure**"
 ### Manual Verification
 ```bash
 # 1. Check database has correct data
-sqlite3 dashboard/baxbench.db "
+sqlite3 dashboard/codestrike.db "
 SELECT
   c.name,
   COUNT(*) as total,
@@ -365,7 +365,7 @@ HAVING COUNT(rc.cwe_id) = 0
 
 ## References
 
-- **BaxBench Paper:** [arxiv.org/abs/2502.11844](https://arxiv.org/abs/2502.11844)
+- **CodeStrike Paper:** [arxiv.org/abs/2502.11844](https://arxiv.org/abs/2502.11844)
 - **CWE Database:** [cwe.mitre.org](https://cwe.mitre.org)
 - **Original Issue:** DeepSeek showing 0% despite 42.9% actual performance
 - **Related:** `DEEPSEEK_ANALYSIS.md` - Performance comparison analysis

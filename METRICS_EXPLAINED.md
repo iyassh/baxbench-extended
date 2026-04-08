@@ -1,8 +1,8 @@
-# BaxBench Security Metrics Explained
+# CodeStrike Security Metrics Explained
 
 ## Overview
 
-BaxBench measures AI model security using two key metrics that capture different aspects of code safety. Understanding the difference between these metrics is crucial for interpreting results accurately.
+CodeStrike measures AI model security using two key metrics that capture different aspects of code safety. Understanding the difference between these metrics is crucial for interpreting results accurately.
 
 ---
 
@@ -351,11 +351,11 @@ secure_by_crash: secure_passes - truly_secure_passes
 
 ## References
 
-- BaxBench Paper: [Original security benchmark](https://github.com/original-baxbench)
+- CodeStrike Paper: [Original security benchmark](https://github.com/original-codestrike)
 - CWE Database: [Common Weakness Enumeration](https://cwe.mitre.org/)
 - Dashboard: `http://localhost:3000` (see Overview page, stat cards)
 - Code: `dashboard/scripts/export-data.js` (metric calculations)
-- Database: `dashboard/baxbench.db` (3,686 test results)
+- Database: `dashboard/codestrike.db` (3,686 test results)
 
 ---
 
@@ -365,7 +365,7 @@ Found an issue with the metric calculations? Open an issue or PR!
 
 **Key Contributors**:
 - Deepansh Sharma (extended benchmark, dashboard, metrics analysis)
-- Original BaxBench team (benchmark framework, test scenarios)
+- Original CodeStrike team (benchmark framework, test scenarios)
 - Claude Code (implementation assistance, documentation)
 
 ---

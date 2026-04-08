@@ -1,18 +1,18 @@
-# BaxBench Security Dashboard — Design Document
+# CodeStrike Security Dashboard — Design Document
 
 ## Goal
 
-A standalone research tool that visualizes BaxBench benchmark results with full drill-down detail (prompts, generated code, test results, failure reasons, logs) and a future repo analysis feature for auditing real-world codebases using the same test suite.
+A standalone research tool that visualizes CodeStrike benchmark results with full drill-down detail (prompts, generated code, test results, failure reasons, logs) and a future repo analysis feature for auditing real-world codebases using the same test suite.
 
 ## Architecture
 
-**Monorepo**: Next.js app inside `baxbench/dashboard/`, reading from an SQLite database pre-populated by a Python loader script.
+**Monorepo**: Next.js app inside `codestrike/dashboard/`, reading from an SQLite database pre-populated by a Python loader script.
 
 **Stack**: Next.js 15 (App Router), React, shadcn/ui, Recharts, Tailwind CSS, SQLite (via better-sqlite3), react-syntax-highlighter.
 
 ```
-baxbench/
-├── src/                  # existing BaxBench pipeline
+codestrike/
+├── src/                  # existing CodeStrike pipeline
 ├── scripts/
 │   ├── load_results_db.py    # NEW: loads results/ → SQLite
 │   └── ...existing scripts
@@ -34,7 +34,7 @@ baxbench/
     ├── lib/
     │   ├── db.ts                 # SQLite connection
     │   └── queries.ts            # Typed query functions
-    ├── baxbench.db               # SQLite database (generated)
+    ├── codestrike.db               # SQLite database (generated)
     └── package.json
 ```
 
@@ -42,7 +42,7 @@ baxbench/
 
 ## Database Schema
 
-SQLite database at `dashboard/baxbench.db`, populated by `scripts/load_results_db.py`.
+SQLite database at `dashboard/codestrike.db`, populated by `scripts/load_results_db.py`.
 
 ```sql
 CREATE TABLE configs (
@@ -219,7 +219,7 @@ Scoped in the database schema and route structure, but not built in v1.
 **Planned flow:**
 1. User enters a local repo path or GitHub URL
 2. Backend clones (if URL) and detects framework
-3. Runs BaxBench security tests against the code
+3. Runs CodeStrike security tests against the code
 4. Optionally sends flagged files to Claude via CLIProxyAPI for LLM analysis
 5. Results stored in `repo_scans` / `repo_results` tables
 6. Displayed in the same format as benchmark results
@@ -235,7 +235,7 @@ Scoped in the database schema and route structure, but not built in v1.
 3. Reads code files, stores relative paths
 4. Reads CWE definitions from `src/cwes.py`
 5. Generates prompt text by calling scenario's `build_prompt()` method
-6. Writes everything to `dashboard/baxbench.db`
+6. Writes everything to `dashboard/codestrike.db`
 7. Idempotent: can re-run safely (drops and recreates tables)
 
 Run after each benchmark: `pipenv run python scripts/load_results_db.py`

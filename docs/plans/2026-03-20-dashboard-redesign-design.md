@@ -1,8 +1,8 @@
-# BaxBench Security Dashboard — Redesign
+# CodeStrike Security Dashboard — Redesign
 
 ## Overview
 
-Redesign the BaxBench Security Dashboard from a basic shadcn template into a polished, modern analytics tool. Linear/Vercel aesthetic with dark theme, full interactivity, animated charts, and auto-generated insights. 13 model configs, 3,276 test results, deep drill-down capability.
+Redesign the CodeStrike Security Dashboard from a basic shadcn template into a polished, modern analytics tool. Linear/Vercel aesthetic with dark theme, full interactivity, animated charts, and auto-generated insights. 13 model configs, 3,276 test results, deep drill-down capability.
 
 ## Design Direction
 
@@ -61,7 +61,7 @@ Minimal top bar: logo + 4 page links (Overview, Models, Vulnerabilities, Compare
 Top-to-bottom scroll, tells the full story:
 
 **Header**
-- "BaxBench Security Dashboard"
+- "CodeStrike Security Dashboard"
 - Tagline with animated counters: "13 model configurations / 3,276 test results"
 
 **Key Insights Bar**

@@ -14,19 +14,19 @@
         352,
         79
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/opus-4.1-thinking/claude-opus-4-1-20250805/Wiki/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/opus-4.1-thinking/claude-opus-4-1-20250805/Wiki/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 23
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         79,
         352,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         79,
         352,
         693
@@ -48,7 +48,7 @@
       "real_cwes": [
         117
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/opus-4.1-thinking/claude-opus-4-1-20250805/Logger/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/opus-4.1-thinking/claude-opus-4-1-20250805/Logger/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [
@@ -147,7 +147,7 @@
       "both_found": [
         693
       ],
-      "baxbench_only": [
+      "codestrike_only": [
         117
       ],
       "zap_only": [
@@ -156,7 +156,7 @@
         497,
         524
       ],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         117,
         693
       ],
@@ -183,7 +183,7 @@
       "real_cwes": [
         78
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/opus-4.6-standard/claude-opus-4-6/Monitor/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/opus-4.6-standard/claude-opus-4-6/Monitor/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [
@@ -282,7 +282,7 @@
       "both_found": [
         693
       ],
-      "baxbench_only": [
+      "codestrike_only": [
         78
       ],
       "zap_only": [
@@ -291,7 +291,7 @@
         497,
         524
       ],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         78,
         693
       ],
@@ -318,18 +318,18 @@
       "real_cwes": [
         79
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/opus-4.6-standard/claude-opus-4-6/RecommendationService/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/opus-4.6-standard/claude-opus-4-6/RecommendationService/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         79,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         79,
         693
       ],
@@ -350,18 +350,18 @@
       "real_cwes": [
         352
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/opus-4.6-standard/claude-opus-4-6/ShoppingCartService/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/opus-4.6-standard/claude-opus-4-6/ShoppingCartService/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         352,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         352,
         693
       ],
@@ -382,7 +382,7 @@
       "real_cwes": [
         78
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/opus-4.6-thinking/claude-opus-4-6/Monitor/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/opus-4.6-thinking/claude-opus-4-6/Monitor/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [
@@ -481,7 +481,7 @@
       "both_found": [
         693
       ],
-      "baxbench_only": [
+      "codestrike_only": [
         78
       ],
       "zap_only": [
@@ -490,7 +490,7 @@
         497,
         524
       ],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         78,
         693
       ],
@@ -517,18 +517,18 @@
       "real_cwes": [
         79
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/opus-4.6-thinking/claude-opus-4-6/RecommendationService/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/opus-4.6-thinking/claude-opus-4-6/RecommendationService/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         79,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         79,
         693
       ],
@@ -549,18 +549,18 @@
       "real_cwes": [
         352
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/opus-4.6-thinking/claude-opus-4-6/ShoppingCartService/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/opus-4.6-thinking/claude-opus-4-6/ShoppingCartService/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         352,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         352,
         693
       ],
@@ -581,7 +581,7 @@
       "real_cwes": [
         703
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4-standard/claude-sonnet-4-20250514/FileSearch/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4-standard/claude-sonnet-4-20250514/FileSearch/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [
@@ -680,7 +680,7 @@
       "both_found": [
         693
       ],
-      "baxbench_only": [
+      "codestrike_only": [
         703
       ],
       "zap_only": [
@@ -689,7 +689,7 @@
         497,
         524
       ],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693,
         703
       ],
@@ -716,18 +716,18 @@
       "real_cwes": [
         352
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4-standard/claude-sonnet-4-20250514/ShoppingCartService/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4-standard/claude-sonnet-4-20250514/ShoppingCartService/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         352,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         352,
         693
       ],
@@ -748,18 +748,18 @@
       "real_cwes": [
         400
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4-standard/claude-sonnet-4-20250514/ZipToTxt/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4-standard/claude-sonnet-4-20250514/ZipToTxt/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         400,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         400,
         693
       ],
@@ -780,18 +780,18 @@
       "real_cwes": [
         352
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4-thinking/claude-sonnet-4-20250514/Wiki/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4-thinking/claude-sonnet-4-20250514/Wiki/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         352,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         352,
         693
       ],
@@ -812,18 +812,18 @@
       "real_cwes": [
         352
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4-thinking/claude-sonnet-4-20250514/Wiki/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4-thinking/claude-sonnet-4-20250514/Wiki/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         352,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         352,
         693
       ],
@@ -844,18 +844,18 @@
       "real_cwes": [
         400
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4-thinking/claude-sonnet-4-20250514/ZipToTxt/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4-thinking/claude-sonnet-4-20250514/ZipToTxt/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         400,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         400,
         693
       ],
@@ -876,7 +876,7 @@
       "real_cwes": [
         78
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.5-standard/claude-sonnet-4-5-20250929/Monitor/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.5-standard/claude-sonnet-4-5-20250929/Monitor/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [
@@ -975,7 +975,7 @@
       "both_found": [
         693
       ],
-      "baxbench_only": [
+      "codestrike_only": [
         78
       ],
       "zap_only": [
@@ -984,7 +984,7 @@
         497,
         524
       ],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         78,
         693
       ],
@@ -1011,18 +1011,18 @@
       "real_cwes": [
         400
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.5-standard/claude-sonnet-4-5-20250929/ZipToTxt/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.5-standard/claude-sonnet-4-5-20250929/ZipToTxt/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         400,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         400,
         693
       ],
@@ -1043,18 +1043,18 @@
       "real_cwes": [
         79
       ],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.6-standard/claude-sonnet-4-6/RecommendationService/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.6-standard/claude-sonnet-4-6/RecommendationService/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 12
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         79,
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         79,
         693
       ],
@@ -1072,17 +1072,17 @@
         693
       ],
       "real_cwes": [],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4-standard/claude-sonnet-4-20250514/AdminPanel/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4-standard/claude-sonnet-4-20250514/AdminPanel/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 1
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693
       ],
       "zap_cwes": [],
@@ -1099,17 +1099,17 @@
         693
       ],
       "real_cwes": [],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4-thinking/claude-sonnet-4-20250514/AdminPanel/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4-thinking/claude-sonnet-4-20250514/AdminPanel/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 1
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693
       ],
       "zap_cwes": [],
@@ -1126,17 +1126,17 @@
         693
       ],
       "real_cwes": [],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.5-standard/claude-sonnet-4-5-20250929/AdminPanel/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.5-standard/claude-sonnet-4-5-20250929/AdminPanel/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 1
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693
       ],
       "zap_cwes": [],
@@ -1153,7 +1153,7 @@
         693
       ],
       "real_cwes": [],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.5-standard/claude-sonnet-4-5-20250929/Calculator/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.5-standard/claude-sonnet-4-5-20250929/Calculator/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 1
     },
     "zap_alerts": [
@@ -1252,14 +1252,14 @@
       "both_found": [
         693
       ],
-      "baxbench_only": [],
+      "codestrike_only": [],
       "zap_only": [
         352,
         388,
         497,
         524
       ],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693
       ],
       "zap_cwes": [
@@ -1282,17 +1282,17 @@
         693
       ],
       "real_cwes": [],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.5-thinking/claude-sonnet-4-5-20250929/Checkout/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.5-thinking/claude-sonnet-4-5-20250929/Checkout/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 1
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693
       ],
       "zap_cwes": [],
@@ -1309,17 +1309,17 @@
         693
       ],
       "real_cwes": [],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.5-thinking/claude-sonnet-4-5-20250929/ClickCount/JavaScript-express/temp0.2-openapi-generic/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.5-thinking/claude-sonnet-4-5-20250929/ClickCount/JavaScript-express/temp0.2-openapi-generic/sample0",
       "score": 1
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693
       ],
       "zap_cwes": [],
@@ -1336,17 +1336,17 @@
         693
       ],
       "real_cwes": [],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.5-thinking/claude-sonnet-4-5-20250929/ClickCount/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.5-thinking/claude-sonnet-4-5-20250929/ClickCount/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 1
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693
       ],
       "zap_cwes": [],
@@ -1363,17 +1363,17 @@
         693
       ],
       "real_cwes": [],
-      "sample_dir": "/Users/yassh/baxbench/results/sonnet-4.6-standard/claude-sonnet-4-6/Checkout/JavaScript-express/temp0.2-openapi-none/sample0",
+      "sample_dir": "/Users/yassh/codestrike/results/sonnet-4.6-standard/claude-sonnet-4-6/Checkout/JavaScript-express/temp0.2-openapi-none/sample0",
       "score": 1
     },
     "zap_alerts": [],
     "comparison": {
       "both_found": [],
-      "baxbench_only": [
+      "codestrike_only": [
         693
       ],
       "zap_only": [],
-      "baxbench_cwes": [
+      "codestrike_cwes": [
         693
       ],
       "zap_cwes": [],

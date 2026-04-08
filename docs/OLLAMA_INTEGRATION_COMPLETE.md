@@ -367,7 +367,7 @@ python3 -m pip install --break-system-packages \
 
 - **Ollama Docs:** https://ollama.ai/
 - **DeepSeek Coder:** https://huggingface.co/deepseek-ai/deepseek-coder-6.7b-instruct
-- **BaxBench Paper:** https://arxiv.org/abs/2502.11844
+- **CodeStrike Paper:** https://arxiv.org/abs/2502.11844
 - **CWE Database:** https://cwe.mitre.org/
 
 ---
@@ -376,10 +376,10 @@ python3 -m pip install --break-system-packages \
 
 Your project now includes:
 
-1. ✅ Extended BaxBench with Ollama support (free AI models)
+1. ✅ Extended CodeStrike with Ollama support (free AI models)
 2. ✅ 5 scenarios generated for manual pen testing
 3. ✅ Complete integration code (`src/ollama_adapter.py`, etc.)
 4. ✅ Dashboard visualization ready for Ollama results
 5. ⏳ Manual penetration tests (in progress - use guide above)
 
-**Next:** Perform the 5 manual tests, document findings, and compare with automated BaxBench results!
+**Next:** Perform the 5 manual tests, document findings, and compare with automated CodeStrike results!

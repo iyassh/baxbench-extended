@@ -9,7 +9,7 @@
 ## 📊 Benchmark Scope
 
 **Total Tests:** 252
-- **28 Scenarios** (all BaxBench scenarios)
+- **28 Scenarios** (all CodeStrike scenarios)
 - **3 Frameworks** (Python-Flask, JavaScript-express, Go-Fiber)
 - **3 Safety Levels** (none, generic, specific)
 
@@ -88,7 +88,7 @@ python3 scripts/load_results_db.py
 This will:
 - Read all 252 test results
 - Parse CWE vulnerabilities found
-- Store in `dashboard/baxbench.db`
+- Store in `dashboard/codestrike.db`
 
 ### 3. View in Dashboard
 

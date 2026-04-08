@@ -70,7 +70,7 @@ export default function OverviewPage() {
         {/* ─── Section 1: Header + Insights ─── */}
         <section id="header">
           <h1 className="font-[family-name:var(--font-display)] text-4xl md:text-5xl font-bold tracking-tight">
-            BaxBench Security Dashboard
+            CodeStrike Security Dashboard
           </h1>
           <p className="text-zinc-400 text-lg mt-3">
             Analyzing{" "}
@@ -183,7 +183,7 @@ export default function OverviewPage() {
               <div className="w-2 h-10 rounded-full bg-red-500 shrink-0" />
               <div>
                 <p className="text-lg font-semibold text-red-400 tabular-nums">14.3% ZAP agreement</p>
-                <p className="text-xs text-zinc-500">Proves BaxBench value</p>
+                <p className="text-xs text-zinc-500">Proves CodeStrike value</p>
               </div>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3">
@@ -233,7 +233,7 @@ export default function OverviewPage() {
               className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all group"
             >
               <p className="font-semibold text-zinc-100 group-hover:text-emerald-400 transition-colors">Manual Pentest Results</p>
-              <p className="text-xs text-zinc-500 mt-1">Human vs ZAP vs BaxBench</p>
+              <p className="text-xs text-zinc-500 mt-1">Human vs ZAP vs CodeStrike</p>
             </Link>
             <Link
               href="/results"

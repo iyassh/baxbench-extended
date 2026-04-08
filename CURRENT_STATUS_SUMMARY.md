@@ -1,8 +1,8 @@
-# BaxBench Project - Current Status Summary
+# CodeStrike Project - Current Status Summary
 
 **Date:** March 25, 2026
 **Latest Commit:** 61ab732
-**Repository:** https://github.com/iyassh/baxbench-extended
+**Repository:** https://github.com/iyassh/codestrike-extended
 
 ---
 
@@ -34,7 +34,7 @@ All changes have been successfully pushed to GitHub. Here's what's in the reposi
 - ✅ `SETUP_OTHER_LAPTOP.md` - Complete setup guide for your other laptop
 
 ### 4. **Database**
-- ✅ `dashboard/baxbench.db` - Includes all 3,528 test results
+- ✅ `dashboard/codestrike.db` - Includes all 3,528 test results
 - ✅ DeepSeek results: 252 tests at 42.9% sec_pass@1
 - ✅ Claude results: 3,276 tests at 89-96% sec_pass@1
 
@@ -73,8 +73,8 @@ All changes have been successfully pushed to GitHub. Here's what's in the reposi
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/iyassh/baxbench-extended.git
-   cd baxbench-extended
+   git clone https://github.com/iyassh/codestrike-extended.git
+   cd codestrike-extended
    ```
 
 2. **Install dependencies**
@@ -166,13 +166,13 @@ All changes have been successfully pushed to GitHub. Here's what's in the reposi
 
 **Abstract:**
 - Problem: AI code generation security
-- Approach: BaxBench framework, 3,528 tests
+- Approach: CodeStrike framework, 3,528 tests
 - Finding: 42.9% security at $0 vs 94% at $50-80
 - Conclusion: Hybrid approach for cost-effectiveness
 
 **Sections:**
 1. Introduction
-2. Related Work (BaxBench paper, LLM security)
+2. Related Work (CodeStrike paper, LLM security)
 3. Methodology (benchmark setup, metrics)
 4. Results (tables + charts from dashboard)
 5. Discussion (cost-benefit trade-offs)
@@ -217,7 +217,7 @@ All changes have been successfully pushed to GitHub. Here's what's in the reposi
 ## 📁 Repository Structure
 
 ```
-baxbench-extended/
+codestrike-extended/
 ├── src/
 │   ├── main.py              # Entry point
 │   ├── ollama_adapter.py    # Ollama integration ⭐
@@ -228,7 +228,7 @@ baxbench-extended/
 │   ├── components/          # React components
 │   ├── lib/
 │   │   └── queries.ts       # Database queries (FIXED ⭐)
-│   └── baxbench.db          # SQLite database (3,528 results)
+│   └── codestrike.db          # SQLite database (3,528 results)
 ├── scripts/
 │   ├── run_deepseek_full_benchmark.sh  # Automated benchmark ⭐
 │   ├── manual_pen_test.sh              # Manual testing
@@ -247,8 +247,8 @@ baxbench-extended/
 
 ## 🔗 Important Links
 
-- **Repository:** https://github.com/iyassh/baxbench-extended
-- **BaxBench Paper:** https://arxiv.org/abs/2502.11844
+- **Repository:** https://github.com/iyassh/codestrike-extended
+- **CodeStrike Paper:** https://arxiv.org/abs/2502.11844
 - **Ollama:** https://ollama.ai/
 - **DeepSeek:** https://github.com/deepseek-ai/deepseek-coder
 - **Anthropic Console:** https://console.anthropic.com/
@@ -277,10 +277,10 @@ git status
 
 # 4. Verify files exist
 ls -lh DEEPSEEK_ANALYSIS.md SETUP_OTHER_LAPTOP.md docs/DASHBOARD_FIXES.md
-ls -lh dashboard/baxbench.db src/ollama_adapter.py
+ls -lh dashboard/codestrike.db src/ollama_adapter.py
 
 # 5. Check database has data
-sqlite3 dashboard/baxbench.db "SELECT COUNT(*) FROM results;"
+sqlite3 dashboard/codestrike.db "SELECT COUNT(*) FROM results;"
 # Should show: 3528
 ```
 

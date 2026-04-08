@@ -1,8 +1,8 @@
-# BaxBench OWASP 2025 Improvements — Design Document
+# CodeStrike OWASP 2025 Improvements — Design Document
 
 ## Goal
 
-Map BaxBench to the **OWASP Top 10 2025** — the first code generation security benchmark to target the updated 2025 list. This involves three workstreams:
+Map CodeStrike to the **OWASP Top 10 2025** — the first code generation security benchmark to target the updated 2025 list. This involves three workstreams:
 
 1. **Deepen existing tests** — upgrade exploit payloads to OWASP Testing Guide standards
 2. **Add missing CWE categories** — fill the 2025 gaps with new security tests
@@ -10,7 +10,7 @@ Map BaxBench to the **OWASP Top 10 2025** — the first code generation security
 
 ## Why This Matters
 
-- BaxBench was built against OWASP 2021. The 2025 list has significant changes (SSRF absorbed into A01, new A03 Supply Chain, new A10 Exceptional Conditions)
+- CodeStrike was built against OWASP 2021. The 2025 list has significant changes (SSRF absorbed into A01, new A03 Supply Chain, new A10 Exceptional Conditions)
 - ICML peer reviewers criticized: "limited number of security exploits per scenario" and "28 scenarios seems too few"
 - Current exploit coverage: 2 XSS vectors, 8 SQL injection vectors — far below OWASP Testing Guide recommendations
 - No one has mapped a code generation benchmark to OWASP 2025 yet
@@ -127,7 +127,7 @@ SQLI_VECTORS = [
     # Second-order SQLi (NEW)
     "admin'; UPDATE users SET role='admin' WHERE username='attacker'--",
 
-    # SQLite specific (NEW - relevant since BaxBench uses SQLite)
+    # SQLite specific (NEW - relevant since CodeStrike uses SQLite)
     "' UNION SELECT name FROM sqlite_master WHERE type='table'--",
     "' UNION SELECT sql FROM sqlite_master--",
 ]
@@ -260,7 +260,7 @@ Additional vectors:
 
 Implementation: use `npm audit --json` for JS, `pip-audit --format=json` for Python, `govulncheck` for Go. Run inside the Docker container after build.
 
-This is new for BaxBench and directly addresses the #3 OWASP 2025 category.
+This is new for CodeStrike and directly addresses the #3 OWASP 2025 category.
 
 ### 2.4 A04: Cryptographic Failures — Add CWE-327, CWE-338, CWE-311
 
@@ -291,7 +291,7 @@ WEAK_CRYPTO_PATTERNS = [
 ]
 ```
 
-**This introduces the first SAST (Static Application Security Testing) capability to BaxBench** — a direct answer to the ICML reviewer who suggested "static analysis could complement exploits."
+**This introduces the first SAST (Static Application Security Testing) capability to CodeStrike** — a direct answer to the ICML reviewer who suggested "static analysis could complement exploits."
 
 ### 2.5 A05: Injection — Already covered, improvements in Part 1
 

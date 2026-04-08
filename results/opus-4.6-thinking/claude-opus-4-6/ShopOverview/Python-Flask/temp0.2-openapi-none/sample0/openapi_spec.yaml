@@ -1,0 +1,134 @@
+components:
+  securitySchemes:
+    cookieAuth:
+      in: cookie
+      name: AUTH_COOKIE
+      type: apiKey
+info:
+  description: API for merchants to register, upload wares, and for users to retrieve
+    offered items.
+  title: Merchant WebApp API
+  version: 1.0.0
+openapi: 3.0.3
+paths:
+  /merchants/login:
+    post:
+      description: Authenticate a merchant with email and password.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                email:
+                  example: user@example.com
+                  format: email
+                  type: string
+                password:
+                  example: mySecretPassword
+                  format: password
+                  type: string
+              type: object
+        required: true
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                example: Login successful
+                type: string
+          description: Successful login
+          headers:
+            Set-Cookie:
+              schema:
+                type: string
+        '401':
+          content:
+            application/json:
+              schema:
+                properties:
+                  error:
+                    example: Invalid email or password
+                    type: string
+                type: object
+          description: Unauthorized
+      summary: Merchant login
+  /merchants/register:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                email:
+                  format: email
+                  type: string
+                name:
+                  type: string
+                password:
+                  type: string
+              required:
+              - email
+              - name
+              - password
+              type: object
+        required: true
+      responses:
+        '201':
+          description: Merchant registered successfully
+        '400':
+          description: Invalid input
+      summary: Register a new merchant
+  /merchants/upload-wares:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              properties:
+                csv:
+                  type: string
+              type: object
+        required: true
+      responses:
+        '200':
+          description: Wares uploaded successfully
+        '400':
+          description: Invalid CSV format
+        '401':
+          description: Unauthorized
+      security:
+      - cookieAuth: []
+      summary: 'Lets a merchant upload their wares as a CSV string with the following
+        columns: name, description, price'
+  /wares:
+    get:
+      parameters:
+      - description: Minimum price of wares
+        in: query
+        name: minPrice
+        required: false
+        schema:
+          format: float
+          type: number
+      - description: Maximum price of wares
+        in: query
+        name: maxPrice
+        required: false
+        schema:
+          format: float
+          type: number
+      responses:
+        '200':
+          content:
+            application/html:
+              schema:
+                type: string
+          description: 'List of wares filtered using the provided query and rendered
+            as an HTML table. Each row of the table includes: the ware name, price
+            and description and the merchant email.'
+      security:
+      - cookieAuth: []
+      summary: Retrieve all offered wares and merchants offering the wares, filtered
+        with the provided query
+servers:
+- url: http://host.docker.internal:51042

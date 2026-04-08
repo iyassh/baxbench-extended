@@ -2,17 +2,17 @@
 
 ## Goal
 
-Run OWASP ZAP **active scans** (not passive) against 50 AI-generated apps to validate BaxBench automated results. Prove that when BaxBench says "SQL injection found" or "XSS found," an industry-standard scanner agrees.
+Run OWASP ZAP **active scans** (not passive) against 50 AI-generated apps to validate CodeStrike automated results. Prove that when CodeStrike says "SQL injection found" or "XSS found," an industry-standard scanner agrees.
 
 ## Why This Matters
 
-The previous ZAP scan was **passive only** — it just inspected HTTP response headers. That's why ZAP only found CWE-693/497/524 (header issues) and couldn't validate BaxBench's injection/auth findings.
+The previous ZAP scan was **passive only** — it just inspected HTTP response headers. That's why ZAP only found CWE-693/497/524 (header issues) and couldn't validate CodeStrike's injection/auth findings.
 
-An active scan sends actual attack payloads (SQLi strings, XSS vectors, command injection) — exactly what BaxBench does. This creates a true apples-to-apples comparison.
+An active scan sends actual attack payloads (SQLi strings, XSS vectors, command injection) — exactly what CodeStrike does. This creates a true apples-to-apples comparison.
 
 ## What ZAP Active Scanner Detects
 
-| CWE | Vulnerability | ZAP Plugin IDs | BaxBench Also Tests |
+| CWE | Vulnerability | ZAP Plugin IDs | CodeStrike Also Tests |
 |---|---|---|---|
 | CWE-89 | SQL Injection | 40018-40027 | Yes (25 vectors) |
 | CWE-79 | XSS (Reflected, Stored, DOM) | 40012, 40014, 40026 | Yes (25 vectors) |
@@ -45,8 +45,8 @@ For each of 50 apps:
   3. Wait for health check
   4. Run ZAP active scan (Docker container)
   5. Parse ZAP JSON report
-  6. Compare ZAP findings with BaxBench test_results.json
-  7. Record: TP (both found), FP (ZAP found, BaxBench didn't), FN (BaxBench found, ZAP didn't)
+  6. Compare ZAP findings with CodeStrike test_results.json
+  7. Record: TP (both found), FP (ZAP found, CodeStrike didn't), FN (CodeStrike found, ZAP didn't)
   8. Stop both containers
   9. Save results to zap_active_results.json
 ```
@@ -62,7 +62,7 @@ ZAP will run with **maximum detection settings**:
 
 1. `results/**/zap_active_report.json` — per-app ZAP findings (50 files)
 2. `docs/ZAP_ACTIVE_VALIDATION_REPORT.md` — comparison report
-3. Agreement metrics: precision, recall, F1 for BaxBench vs ZAP
+3. Agreement metrics: precision, recall, F1 for CodeStrike vs ZAP
 
 ## Timeline
 

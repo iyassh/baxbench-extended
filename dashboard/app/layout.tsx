@@ -22,8 +22,8 @@ const jetbrainsMono = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "BaxBench Security Dashboard",
-  description: "Visualize BaxBench benchmark results with full drill-down detail",
+  title: "CodeStrike Security Dashboard",
+  description: "Visualize CodeStrike benchmark results with full drill-down detail",
 };
 
 const searchItems: SearchItem[] = [

@@ -1,14 +1,14 @@
-# BaxBench Security Dashboard — Implementation Plan
+# CodeStrike Security Dashboard — Implementation Plan
 
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
-**Goal:** Build a local Next.js dashboard that visualizes BaxBench benchmark results with full drill-down detail (prompts, generated code, test results, failure reasons, logs) and scoped future repo analysis.
+**Goal:** Build a local Next.js dashboard that visualizes CodeStrike benchmark results with full drill-down detail (prompts, generated code, test results, failure reasons, logs) and scoped future repo analysis.
 
-**Architecture:** Python loader script reads the `results/` directory tree and populates an SQLite database at `dashboard/baxbench.db`. Next.js 15 App Router serves the dashboard using `better-sqlite3` for server-side queries. All data access happens in Server Components — no client-side DB calls.
+**Architecture:** Python loader script reads the `results/` directory tree and populates an SQLite database at `dashboard/codestrike.db`. Next.js 15 App Router serves the dashboard using `better-sqlite3` for server-side queries. All data access happens in Server Components — no client-side DB calls.
 
 **Tech Stack:** Next.js 15 (App Router), React 19, shadcn/ui, Recharts, Tailwind CSS v4, SQLite via better-sqlite3, react-syntax-highlighter, Python 3.12 (loader script)
 
-**Design Doc:** `docs/plans/2026-03-04-baxbench-dashboard-design.md`
+**Design Doc:** `docs/plans/2026-03-04-codestrike-dashboard-design.md`
 
 ---
 
@@ -27,7 +27,7 @@
 **Step 1: Create the Next.js app**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 npx create-next-app@latest dashboard --typescript --tailwind --eslint --app --no-src-dir --import-alias "@/*" --no-turbopack
 ```
 
@@ -36,7 +36,7 @@ Accept defaults. This scaffolds the full app structure.
 **Step 2: Install dashboard-specific dependencies**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm install better-sqlite3 recharts react-syntax-highlighter
 npm install -D @types/better-sqlite3 @types/react-syntax-highlighter
 ```
@@ -44,7 +44,7 @@ npm install -D @types/better-sqlite3 @types/react-syntax-highlighter
 **Step 3: Install shadcn/ui**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npx shadcn@latest init --defaults
 ```
 
@@ -53,14 +53,14 @@ Accept defaults (New York style, Zinc color, CSS variables).
 **Step 4: Add commonly needed shadcn components**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npx shadcn@latest add card badge table tabs select separator tooltip
 ```
 
 **Step 5: Verify the app starts**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run dev
 ```
 
@@ -70,7 +70,7 @@ Expected: App runs on `localhost:3000` with the default Next.js page.
 
 Add to `dashboard/.gitignore`:
 ```
-baxbench.db
+codestrike.db
 ```
 
 The SQLite database is generated and should not be committed.
@@ -78,7 +78,7 @@ The SQLite database is generated and should not be committed.
 **Step 7: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/
 git commit -m "feat(dashboard): scaffold Next.js 15 app with shadcn/ui, recharts, better-sqlite3"
 ```
@@ -87,7 +87,7 @@ git commit -m "feat(dashboard): scaffold Next.js 15 app with shadcn/ui, recharts
 
 ## Task 2: Write the Python Data Loader Script
 
-This script reads `results/` and populates `dashboard/baxbench.db`. It is the sole data pipeline between BaxBench results and the dashboard.
+This script reads `results/` and populates `dashboard/codestrike.db`. It is the sole data pipeline between CodeStrike results and the dashboard.
 
 **Files:**
 - Create: `scripts/load_results_db.py`
@@ -105,13 +105,13 @@ Create `scripts/load_results_db.py`:
 
 ```python
 #!/usr/bin/env python3
-"""Load BaxBench results/ directory into dashboard/baxbench.db (SQLite).
+"""Load CodeStrike results/ directory into dashboard/codestrike.db (SQLite).
 
 Idempotent: drops and recreates all tables on each run.
 
 Usage:
     pipenv run python scripts/load_results_db.py
-    pipenv run python scripts/load_results_db.py --results-dir results --db dashboard/baxbench.db
+    pipenv run python scripts/load_results_db.py --results-dir results --db dashboard/codestrike.db
 """
 import argparse
 import json
@@ -120,7 +120,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-# Add src/ to path so we can import BaxBench modules
+# Add src/ to path so we can import CodeStrike modules
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from cwes import CWE
@@ -219,7 +219,7 @@ CREATE TABLE IF NOT EXISTS repo_result_cwes (
 );
 """
 
-# Original BaxBench CWEs (before our extension)
+# Original CodeStrike CWEs (before our extension)
 ORIGINAL_CWE_NAMES = {
     "XSS", "PATH_TRAVERSAL", "CODE_INJECTION", "SQL_INJECTION",
     "IMPROPER_ACCESS_CONTROL", "IMPROPER_AUTHENTICATION",
@@ -273,15 +273,15 @@ def load_configs(conn: sqlite3.Connection) -> dict[str, int]:
 def load_prompts(conn: sqlite3.Connection):
     """Generate and store prompt text for each scenario × framework × safety_prompt combo.
 
-    This imports BaxBench scenario modules and calls build_prompt().
+    This imports CodeStrike scenario modules and calls build_prompt().
     """
     try:
         from scenarios import SCENARIOS as SCENARIO_OBJECTS
         from env.base import Env
         from env import ENVS
     except ImportError:
-        print("  WARN: Could not import BaxBench scenarios. Skipping prompt loading.")
-        print("  (Run from the baxbench root directory with: pipenv run python scripts/load_results_db.py)")
+        print("  WARN: Could not import CodeStrike scenarios. Skipping prompt loading.")
+        print("  (Run from the codestrike root directory with: pipenv run python scripts/load_results_db.py)")
         return
 
     env_map = {e.id: e for e in ENVS}
@@ -402,9 +402,9 @@ def load_results(conn: sqlite3.Connection, results_dir: str, config_ids: dict[st
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Load BaxBench results into SQLite for the dashboard")
+    parser = argparse.ArgumentParser(description="Load CodeStrike results into SQLite for the dashboard")
     parser.add_argument("--results-dir", default="results", help="Path to results/ directory")
-    parser.add_argument("--db", default="dashboard/baxbench.db", help="Output SQLite database path")
+    parser.add_argument("--db", default="dashboard/codestrike.db", help="Output SQLite database path")
     args = parser.parse_args()
 
     os.makedirs(os.path.dirname(args.db), exist_ok=True)
@@ -447,20 +447,20 @@ if __name__ == "__main__":
 **Step 2: Run the loader**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 pipenv run python scripts/load_results_db.py
 ```
 
-Expected: Output showing loaded results count, CWE definitions, configs. Database created at `dashboard/baxbench.db`.
+Expected: Output showing loaded results count, CWE definitions, configs. Database created at `dashboard/codestrike.db`.
 
 **Step 3: Verify the database**
 
 ```bash
-cd /Users/yassh/baxbench
-sqlite3 dashboard/baxbench.db "SELECT name, model_id, thinking FROM configs;"
-sqlite3 dashboard/baxbench.db "SELECT COUNT(*) FROM results;"
-sqlite3 dashboard/baxbench.db "SELECT scenario, framework, safety_prompt, functional_pass FROM results LIMIT 5;"
-sqlite3 dashboard/baxbench.db "SELECT num, name, is_extended FROM cwes ORDER BY num;"
+cd /Users/yassh/codestrike
+sqlite3 dashboard/codestrike.db "SELECT name, model_id, thinking FROM configs;"
+sqlite3 dashboard/codestrike.db "SELECT COUNT(*) FROM results;"
+sqlite3 dashboard/codestrike.db "SELECT scenario, framework, safety_prompt, functional_pass FROM results LIMIT 5;"
+sqlite3 dashboard/codestrike.db "SELECT num, name, is_extended FROM cwes ORDER BY num;"
 ```
 
 Expected: Configs listed, results count > 0, sample rows visible, all 20+ CWEs loaded.
@@ -468,7 +468,7 @@ Expected: Configs listed, results count > 0, sample rows visible, all 20+ CWEs l
 **Step 4: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add scripts/load_results_db.py
 git commit -m "feat(dashboard): add Python data loader script for SQLite database"
 ```
@@ -584,7 +584,7 @@ let db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (!db) {
-    const dbPath = path.join(process.cwd(), "baxbench.db");
+    const dbPath = path.join(process.cwd(), "codestrike.db");
     db = new Database(dbPath, { readonly: true });
     db.pragma("journal_mode = WAL");
   }
@@ -890,7 +890,7 @@ export function getFrameworkComparison() {
 **Step 4: Verify TypeScript compiles**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npx tsc --noEmit lib/types.ts lib/db.ts lib/queries.ts 2>&1 || echo "Check errors above"
 ```
 
@@ -899,7 +899,7 @@ Note: This may fail if Next.js isn't fully configured yet. That's OK — we'll c
 **Step 5: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/lib/
 git commit -m "feat(dashboard): add database connection layer and typed query functions"
 ```
@@ -941,7 +941,7 @@ export function Nav() {
     <header className="border-b bg-background">
       <div className="container mx-auto flex h-14 items-center gap-6 px-4">
         <Link href="/" className="font-bold text-lg">
-          BaxBench Dashboard
+          CodeStrike Dashboard
         </Link>
         <nav className="flex gap-4">
           {links.map((link) => (
@@ -978,8 +978,8 @@ import { Nav } from "@/components/nav";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "BaxBench Security Dashboard",
-  description: "Visualize BaxBench benchmark results with full drill-down detail",
+  title: "CodeStrike Security Dashboard",
+  description: "Visualize CodeStrike benchmark results with full drill-down detail",
 };
 
 export default function RootLayout({
@@ -1133,7 +1133,7 @@ export function LogViewer({ title, content, defaultOpen = false }: LogViewerProp
 **Step 4: Verify the app compiles and renders**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run build 2>&1 | tail -20
 ```
 
@@ -1142,7 +1142,7 @@ Expected: Build succeeds (possibly with warnings about unused pages, which is fi
 **Step 5: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/components/ dashboard/app/layout.tsx
 git commit -m "feat(dashboard): add navigation, layout, and shared UI components"
 ```
@@ -1252,7 +1252,7 @@ export default function OverviewPage() {
   return (
     <div className="space-y-8">
       <div>
-        <h1 className="text-3xl font-bold">BaxBench Security Dashboard</h1>
+        <h1 className="text-3xl font-bold">CodeStrike Security Dashboard</h1>
         <p className="text-muted-foreground mt-1">
           Security benchmark results across {configsWithResults.length} model configurations
           and {scenarios.length} scenarios
@@ -1348,7 +1348,7 @@ export default function OverviewPage() {
 **Step 3: Verify the page renders**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run dev
 ```
 
@@ -1357,7 +1357,7 @@ Open `http://localhost:3000` — should show the overview with scorecard, chart,
 **Step 4: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/app/page.tsx dashboard/components/charts/
 git commit -m "feat(dashboard): add overview page with scorecard, chart, and model table"
 ```
@@ -1571,7 +1571,7 @@ export default async function ModelPage({
 **Step 2: Verify the page renders**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run dev
 ```
 
@@ -1580,7 +1580,7 @@ Navigate to `http://localhost:3000/models/haiku-4.5-standard` — should show mo
 **Step 3: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/app/models/
 git commit -m "feat(dashboard): add model deep-dive page with safety prompt comparison"
 ```
@@ -1794,7 +1794,7 @@ export default async function CweDetailPage({
 **Step 3: Verify both pages render**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run dev
 ```
 
@@ -1803,7 +1803,7 @@ Navigate to `http://localhost:3000/cwes` and `http://localhost:3000/cwes/693`.
 **Step 4: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/app/cwes/
 git commit -m "feat(dashboard): add CWE explorer and per-CWE detail pages"
 ```
@@ -1991,7 +1991,7 @@ export default async function ScenarioPage({
 **Step 2: Verify the page**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run dev
 ```
 
@@ -2000,7 +2000,7 @@ Navigate to `http://localhost:3000/scenarios/Login`.
 **Step 3: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/app/scenarios/
 git commit -m "feat(dashboard): add scenario browser with prompt viewer and results table"
 ```
@@ -2182,7 +2182,7 @@ export default async function ResultPage({
 **Step 2: Verify the page**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run dev
 ```
 
@@ -2191,7 +2191,7 @@ Navigate to a result from the scenario page (click "View" link).
 **Step 3: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/app/results/
 git commit -m "feat(dashboard): add result detail page with code viewer and test logs"
 ```
@@ -2478,7 +2478,7 @@ export default function ComparePage() {
 **Step 3: Verify the page**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run dev
 ```
 
@@ -2487,7 +2487,7 @@ Navigate to `http://localhost:3000/compare` — verify all 4 tabs render.
 **Step 4: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/app/compare/ dashboard/components/charts/safety-comparison-chart.tsx
 git commit -m "feat(dashboard): add comparisons page with safety/thinking/framework/tier tabs"
 ```
@@ -2518,7 +2518,7 @@ export default nextConfig;
 **Step 2: Verify build succeeds**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run build 2>&1 | tail -10
 ```
 
@@ -2527,7 +2527,7 @@ Expected: Build completes without `better-sqlite3` errors.
 **Step 3: Commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add dashboard/next.config.ts
 git commit -m "fix(dashboard): externalize better-sqlite3 from webpack bundling"
 ```
@@ -2541,7 +2541,7 @@ git commit -m "fix(dashboard): externalize better-sqlite3 from webpack bundling"
 **Step 1: Load the database**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 pipenv run python scripts/load_results_db.py
 ```
 
@@ -2550,7 +2550,7 @@ Expected: Output shows loaded results, CWE definitions, configs.
 **Step 2: Build the dashboard**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run build
 ```
 
@@ -2559,7 +2559,7 @@ Expected: Build succeeds with no errors.
 **Step 3: Start the dashboard and verify all pages**
 
 ```bash
-cd /Users/yassh/baxbench/dashboard
+cd /Users/yassh/codestrike/dashboard
 npm run dev
 ```
 
@@ -2579,9 +2579,9 @@ If pages crash or show errors, fix them and re-test.
 **Step 5: Final commit**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git add -A dashboard/
-git commit -m "feat(dashboard): complete BaxBench security dashboard v1"
+git commit -m "feat(dashboard): complete CodeStrike security dashboard v1"
 ```
 
 ---
@@ -2591,7 +2591,7 @@ git commit -m "feat(dashboard): complete BaxBench security dashboard v1"
 **Step 1: Push all dashboard commits**
 
 ```bash
-cd /Users/yassh/baxbench
+cd /Users/yassh/codestrike
 git push origin feat/extended-security-tests
 ```
 

@@ -27,7 +27,7 @@ export function Nav() {
           className="flex items-center gap-2 font-[family-name:var(--font-display)] font-bold text-lg tracking-tight"
         >
           <Shield className="h-5 w-5 text-emerald" />
-          BaxBench
+          CodeStrike
         </Link>
 
         {/* Center: Nav links */}
