@@ -45,14 +45,10 @@ MODEL_CONFIGS = [
 FRAMEWORKS = ["Python-Flask", "JavaScript-express", "Go-Fiber"]
 SAFETY_PROMPTS = ["none", "generic", "specific"]
 
-# All 28 scenario IDs
+# Only generate the 7 new OWASP 2025 scenarios (existing 28 already done)
 SCENARIOS = [
-    "Calculator", "ClickCount", "Compiler", "CreditCardService", "FileSearch",
-    "Forum", "FrameExtract", "ImageConverter", "ImageTransfer", "Logger",
-    "Login", "Monitor", "PDFCat", "PDFToText", "ProductCatalog",
-    "ProfileCollection", "Recipes", "RecommendationService", "RegexSearch",
-    "SecretStorage", "ShopOverview", "ShoppingCartService", "SongDownloader",
-    "Unsubscribe", "UptimeService", "UserCreation", "Wiki", "ZipToTxt",
+    "MultiUserNotes", "LinkPreview", "AdminPanel", "XMLImporter",
+    "UserSettings", "Checkout", "PasswordReset",
 ]
 
 
