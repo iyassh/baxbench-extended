@@ -49,31 +49,27 @@ DOCKERFILES = {
 RUN apt-get update && apt-get install sqlite3 -y
 RUN mkdir -p /app
 WORKDIR /app
-COPY requirements.txt requirements.txt 2>/dev/null || true
+COPY . /app/
 RUN test -f requirements.txt && pip install -r requirements.txt || pip install flask pyjwt bcrypt passlib
 ENV APP_SECRET=supers3cret
-COPY / /app/
 ENTRYPOINT ["python3", "app.py"]""",
 
-    "JavaScript-express": """FROM node:22.12-bullseye
+    "JavaScript-express": """FROM node:22-bullseye
 RUN apt-get update && apt-get install sqlite3 -y
 RUN mkdir -p /app
 WORKDIR /app
-COPY package.json package.json 2>/dev/null || true
-RUN test -f package.json && npm install || npm init -y && npm install express better-sqlite3 bcryptjs jsonwebtoken uuid cookie-parser cors
-COPY * /app/
+COPY . /app/
+RUN test -f package.json && npm install || npm init -y && npm install express sqlite3 better-sqlite3 bcryptjs jsonwebtoken uuid cookie-parser cors
 ENV APP_SECRET=supers3cret
 ENTRYPOINT ["node", "app.js"]""",
 
     "Go-Fiber": """FROM golang:1.23-bullseye
 RUN apt-get update && apt-get install sqlite3 gcc build-essential -y
-RUN go install golang.org/x/tools/cmd/goimports@v0.36.0
 RUN mkdir -p /app
 WORKDIR /app
-COPY go.mod build_helper.go ./ 2>/dev/null || true
-RUN test -f go.mod && go get myapp && go install && CGO_ENABLED=1 go build . || true
-COPY * ./
-RUN test -f go.mod && goimports -w . && go mod tidy && CGO_ENABLED=1 go build . || true
+COPY . /app/
+RUN if [ -f go.mod ]; then go mod download && CGO_ENABLED=1 go build -o myapp .; fi
+RUN if [ ! -f go.mod ]; then go mod init myapp && go mod tidy && CGO_ENABLED=1 go build -o myapp .; fi
 ENV APP_SECRET=supers3cret
 ENTRYPOINT ["./myapp"]""",
 }
@@ -104,10 +100,11 @@ def select_apps(limit=50):
         if not func_pass or not cwes:
             continue
 
-        parts = str(tf).split("/")
+        rel = tf.relative_to(RESULTS_DIR)
+        parts = rel.parts
         apps.append({
-            "config": parts[1], "scenario": parts[3], "fw": parts[4],
-            "safety": parts[5].replace("temp0.2-openapi-", ""),
+            "config": parts[0], "scenario": parts[2], "fw": parts[3],
+            "safety": parts[4].replace("temp0.2-openapi-", ""),
             "cwes": cwes, "real_cwes": real_cwes,
             "sample_dir": str(tf.parent),
             "score": len(real_cwes) * 10 + len(cwes),
@@ -441,7 +438,10 @@ def main():
     # Summary
     total_both = sum(len(r["comparison"]["both_found"]) for r in all_results)
     total_bax = sum(len(r["comparison"]["baxbench_cwes"]) for r in all_results)
-    print(f"\n=== FINAL: {total_both}/{total_bax} BaxBench findings validated ({total_both/total_bax*100:.1f}%) ===")
+    if total_bax > 0:
+        print(f"\n=== FINAL: {total_both}/{total_bax} BaxBench findings validated ({total_both/total_bax*100:.1f}%) ===")
+    else:
+        print(f"\n=== FINAL: No BaxBench findings to validate (0 apps scanned successfully) ===")
 
 
 if __name__ == "__main__":
