@@ -438,6 +438,52 @@ Evidence from the safety prompt toggle:
 
 sec_pass@1 divides by all tests including crashes. Since crash rates vary by model, sec_pass conflates quality and security. Sec (Working) isolates the security question: "when the code works, is it secure?"
 
+### Insight: Compare Page Charts Were Unreadable (Fixed)
+> "All Compare page charts had Y-axis hardcoded to 0-100% but actual values are under 14%. Every bar was an invisible sliver. Changed to auto-scaling so differences between models are clearly visible."
+
+This affected the Safety Prompts, Thinking vs Standard, and Frameworks charts. Auto-scaling makes bars proportional to the data range, not to 100%.
+
+### Insight: Framework Comparison Only Shows Express Bars
+> "On sec_pass@1, only Express has visible bars (9.6%). Flask (0.1%) and Go-Fiber (0.0%) are invisible. Switching to pass@1 reveals all three: Express 48.4%, Flask 29.5%, Go-Fiber 7.9%."
+
+The 4-metric toggle (sec_pass, true_sec, pass@1, Sec Working) lets you see different aspects:
+- sec_pass@1: Express dominates, others invisible — shows security gap
+- pass@1: All three visible — shows code quality gap (Express 6x better than Fiber)
+- Sec(Working): Express 19.8%, Flask 0.5%, Fiber 0% — shows even working Go code is never secure
+
+### Insight: Thinking Mode Helps Code Quality But Not Security
+> "Switching to pass@1 on the Thinking chart reveals that thinking mode DOES improve code quality — sonnet-4-thinking achieves 38.1% pass@1 vs 31.7% standard. But this doesn't translate to better security — more working apps just means more vulnerable apps."
+
+This is a subtle but important finding: thinking mode helps the AI write code that compiles and runs correctly, but the extra reasoning doesn't make it add security measures. The model thinks harder about functionality, not about security.
+
+### Insight: Generic Prompt Column Proves "Write Secure Code" Is Useless
+> "Adding the Generic column to the Safety Prompt table makes it immediately visible: a wall of 0.0% across almost all models. The only exception is opus-4-thinking with 1.0% (one single secure app). Generic instructions are functionally equivalent to no instructions."
+
+The three columns (None / Generic / Specific) in the table tell the complete prompt strategy story:
+- None: 0% everywhere except sonnet-4-standard (3.8%)
+- Generic: 0% everywhere except opus-4-thinking (1.0%)  
+- Specific: 7.6-13.3% for Claude models
+
+### Insight: The 47 vs 41 Pentest Number Difference
+> "The Pentest page shows 47 manual findings but precision/recall uses 41. The 6 difference are informational findings outside CodeStrike's testing scope (e.g., server version disclosure). Precision = 11/(11+0) = 100% using the 41 comparable findings."
+
+Both numbers are correct for different purposes: 47 is total findings by human pentesters, 41 is the subset that CodeStrike could theoretically have detected.
+
+### Insight: OWASP Numbers Matched After CWE-20 Fix
+> "The Vulnerabilities page showed 2,295 total occurrences but OWASP section showed 2,268. The 27 difference was CWE-20 (Input Validation) which wasn't mapped to any OWASP category. Added to A03 Injection — now both show 2,295."
+
+Always verify totals match across different views of the same data.
+
+### Insight: Prompt/Code/Logs Tabs Were Showing Wrong Content
+> "The model detail Prompt tab showed nothing, Code tab showed log files, and Logs tab was empty. The export script had a path bug: code_path in the database IS the code/ directory, but the script was calling path.dirname() on it, going one level too high to sample0/ — reading test logs as 'code' and finding no logs in the parent directory."
+
+Fixed by using code_path directly for code files and its parent for logs. Now: Prompt shows the full AI prompt (5000+ chars), Code shows app.py/app.js/main.go, Logs shows 15KB+ build output.
+
+### Insight: ZAP Active Scan Confirms CodeStrike's Value
+> "28 apps scanned with ZAP active scanning. Only CWE-693 (missing headers) was confirmed by both tools. ZAP found 5 CWE types CodeStrike doesn't check (388, 497, 524, 352 via headers, 1021). CodeStrike found 7 CWE types ZAP completely missed (79 XSS, 307 brute force, 78 OS injection, 400 resource exhaustion, 614 session cookies, 1275 SameSite, 89 SQLi)."
+
+The tools are genuinely complementary — 13.9% agreement means they test different things, not that one is wrong.
+
 ---
 
 ## 13. Key Numbers For Slides
