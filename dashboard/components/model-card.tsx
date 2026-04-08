@@ -39,7 +39,9 @@ export function ModelCard({ config, onClick, sparklineData }: ModelCardProps) {
   const secPass = Math.round(config.sec_pass_at_1 * 1000) / 10;
   const trueSecPass = Math.round((config.true_sec_pass_at_1 || 0) * 1000) / 10;
   const passAt1 = Math.round(config.pass_at_1 * 1000) / 10;
-  const crashInflation = secPass - trueSecPass;
+  const secWorking = config.functional_passes > 0
+    ? Math.round((config.secure_passes / config.functional_passes) * 1000) / 10
+    : 0;
 
   return (
     <motion.div
@@ -78,50 +80,45 @@ export function ModelCard({ config, onClick, sparklineData }: ModelCardProps) {
         </span>
       </div>
 
-      {/* Security metrics comparison */}
-      <div className="mt-4 space-y-2">
-        {/* sec_pass@1 (includes crashes) */}
+      {/* Metrics grid */}
+      <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-2">
         <div>
-          <div className={`text-2xl font-bold tabular-nums ${secPassColor(secPass)}`}>
+          <div className={`text-xl font-bold tabular-nums ${secPassColor(secPass)}`}>
             {secPass.toFixed(1)}%
           </div>
-          <p className="text-xs text-zinc-500 mt-0.5">sec_pass@1 (incl. crashes)</p>
+          <p className="text-[10px] text-zinc-500">sec_pass@1</p>
         </div>
-
-        {/* true_sec@1 (clean only) */}
-        <div className="flex items-center gap-2">
-          <div>
-            <div className={`text-lg font-semibold tabular-nums ${secPassColor(trueSecPass)}`}>
-              {trueSecPass.toFixed(1)}%
-            </div>
-            <p className="text-xs text-zinc-500">true_sec@1 (clean only)</p>
+        <div>
+          <div className={`text-xl font-bold tabular-nums ${secPassColor(trueSecPass)}`}>
+            {trueSecPass.toFixed(1)}%
           </div>
-          {crashInflation > 5 && (
-            <div className="flex items-center gap-1 text-amber-400/80" title={`${crashInflation.toFixed(1)}% of security comes from crashes`}>
-              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <span className="text-[10px] font-medium">{crashInflation.toFixed(0)}% crash-safe</span>
-            </div>
-          )}
+          <p className="text-[10px] text-zinc-500">true_sec@1</p>
+        </div>
+        <div>
+          <div className={`text-xl font-bold tabular-nums ${secWorking > 0 ? "text-purple-400" : "text-zinc-600"}`}>
+            {secWorking.toFixed(1)}%
+          </div>
+          <p className="text-[10px] text-zinc-500">Sec (Working)</p>
+        </div>
+        <div>
+          <div className="text-xl font-bold tabular-nums text-blue-400">
+            {passAt1.toFixed(1)}%
+          </div>
+          <p className="text-[10px] text-zinc-500">pass@1</p>
         </div>
       </div>
 
-      {/* pass@1 */}
-      <div className="mt-3">
-        <span className="text-sm text-zinc-400 tabular-nums">
-          {passAt1.toFixed(1)}%
-        </span>
-        <span className="text-xs text-zinc-500 ml-1">pass@1</span>
-      </div>
-
-      {/* CWE count */}
-      <div className="mt-2 flex items-center gap-1.5">
-        <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
-        <span className="text-sm text-red-400 tabular-nums">
-          {config.total_cwes}
-        </span>
-        <span className="text-xs text-zinc-500">CWEs</span>
+      {/* Bottom row: CWEs + total results */}
+      <div className="mt-3 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <span className="inline-block w-1.5 h-1.5 rounded-full bg-red-400" />
+          <span className="text-sm text-red-400 tabular-nums">{config.total_cwes}</span>
+          <span className="text-xs text-zinc-500">CWEs</span>
+        </div>
+        <div className="text-xs text-zinc-600 tabular-nums">
+          {config.secure_passes}/{config.functional_passes}/{config.total_results}
+          <span className="text-zinc-700 ml-1">sec/func/total</span>
+        </div>
       </div>
 
       {/* Mini sparkline */}
