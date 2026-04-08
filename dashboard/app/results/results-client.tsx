@@ -5,6 +5,17 @@ import type { ConfigWithStats, ResultWithCwes } from "@/lib/types";
 import { PromptTab } from "@/components/deep-dive/prompt-tab";
 import { CodeTab } from "@/components/deep-dive/code-tab";
 import { LogsTab } from "@/components/deep-dive/logs-tab";
+import { ViewToggle } from "@/components/view-toggle";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Legend,
+} from "recharts";
 
 type TabId = "prompt" | "code" | "logs";
 
@@ -41,6 +52,7 @@ export function ResultsClient({ configs, resultsByConfig }: ResultsClientProps) 
 
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const [activeTab, setActiveTab] = useState<TabId>("prompt");
+  const [resultsView, setResultsView] = useState<"table" | "chart">("table");
 
   const filtered = useMemo(() => {
     const results = resultsByConfig[selectedConfig] ?? [];
@@ -51,6 +63,20 @@ export function ResultsClient({ configs, resultsByConfig }: ResultsClientProps) 
       return true;
     });
   }, [resultsByConfig, selectedConfig, selectedScenario, selectedFramework, selectedSafety]);
+
+  // Chart data: group by scenario, count pass/fail/cwes
+  const chartData = useMemo(() => {
+    const byScenario: Record<string, { pass: number; fail: number; cwes: number }> = {};
+    filtered.forEach((r) => {
+      if (!byScenario[r.scenario]) byScenario[r.scenario] = { pass: 0, fail: 0, cwes: 0 };
+      if (r.functional_pass) byScenario[r.scenario].pass++;
+      else byScenario[r.scenario].fail++;
+      byScenario[r.scenario].cwes += r.cwes?.length ?? 0;
+    });
+    return Object.entries(byScenario)
+      .map(([name, d]) => ({ name, Pass: d.pass, Fail: d.fail, CWEs: d.cwes }))
+      .sort((a, b) => b.CWEs - a.CWEs);
+  }, [filtered]);
 
   const configMeta = configs.find((c) => c.name === selectedConfig);
 
@@ -202,8 +228,34 @@ export function ResultsClient({ configs, resultsByConfig }: ResultsClientProps) 
         </div>
       </section>
 
-      {/* ─── Section 2: Results Table ─── */}
+      {/* ─── Section 2: Results ─── */}
       <section className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+        <div className="flex items-center justify-between px-5 pt-4 pb-2">
+          <h2 className="text-sm font-medium text-zinc-400 uppercase tracking-wider">
+            {filtered.length} Results
+          </h2>
+          <ViewToggle view={resultsView} onToggle={setResultsView} />
+        </div>
+
+        {resultsView === "chart" ? (
+          <div className="p-5">
+            <ResponsiveContainer width="100%" height={Math.max(300, chartData.length * 35)}>
+              <BarChart data={chartData} layout="vertical" margin={{ left: 100, right: 20 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#27272a" horizontal={false} />
+                <XAxis type="number" tick={{ fill: "#a1a1aa", fontSize: 11 }} />
+                <YAxis dataKey="name" type="category" tick={{ fill: "#a1a1aa", fontSize: 11 }} width={95} />
+                <Tooltip
+                  contentStyle={{ backgroundColor: "#18181b", border: "1px solid #3f3f46", borderRadius: 8, fontSize: 12 }}
+                  labelStyle={{ color: "#e4e4e7" }}
+                />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: 12 }} />
+                <Bar dataKey="Pass" fill="#34d399" radius={[0, 4, 4, 0]} maxBarSize={14} />
+                <Bar dataKey="Fail" fill="#f87171" radius={[0, 4, 4, 0]} maxBarSize={14} />
+                <Bar dataKey="CWEs" fill="#fbbf24" radius={[0, 4, 4, 0]} maxBarSize={14} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -244,6 +296,7 @@ export function ResultsClient({ configs, resultsByConfig }: ResultsClientProps) 
             </tbody>
           </table>
         </div>
+        )}
       </section>
     </div>
   );
