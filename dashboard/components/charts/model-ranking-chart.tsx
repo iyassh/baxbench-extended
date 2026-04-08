@@ -1,18 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
-import {
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Cell,
-  Legend,
-} from "recharts";
-import { ChartTooltip } from "@/components/chart-tooltip";
+import { cn } from "@/lib/utils";
 
 interface ModelRankingData {
   name: string;
@@ -22,6 +12,9 @@ interface ModelRankingData {
   total_cwes: number;
   family: string;
   thinking: boolean;
+  functional_passes?: number;
+  total_results?: number;
+  secure_passes?: number;
 }
 
 interface ModelRankingChartProps {
@@ -32,70 +25,50 @@ const familyColors: Record<string, { solid: string; light: string }> = {
   haiku: { solid: "#71717a", light: "#a1a1aa" },
   sonnet: { solid: "#3b82f6", light: "#60a5fa" },
   opus: { solid: "#8b5cf6", light: "#a78bfa" },
-  deepseek: { solid: "#10b981", light: "#34d399" }, // emerald for free/open source
-  llama: { solid: "#f59e0b", light: "#fbbf24" }, // amber for Meta's Llama
-  mistral: { solid: "#ec4899", light: "#f472b6" }, // pink for Mistral
-  gemma: { solid: "#06b6d4", light: "#22d3ee" }, // cyan for Google's Gemma
+  deepseek: { solid: "#10b981", light: "#34d399" },
+  llama: { solid: "#f59e0b", light: "#fbbf24" },
+  mistral: { solid: "#ec4899", light: "#f472b6" },
+  gemma: { solid: "#06b6d4", light: "#22d3ee" },
 };
+
+type SortKey = "sec_pass" | "true_sec" | "pass_at_1" | "cwes" | "name";
 
 function getBarColor(family: string, thinking: boolean): string {
   const colors = familyColors[family] || familyColors.haiku;
   return thinking ? colors.light : colors.solid;
 }
 
-function CustomTooltipContent(props: {
-  active?: boolean;
-  payload?: Array<{ payload: ModelRankingData; value: number; name: string; fill: string }>;
-  label?: string;
-}) {
-  const { active, payload, label } = props;
-  if (!active || !payload || payload.length === 0) return null;
-
-  const d = payload[0].payload;
-  const secPassValue = payload.find(p => p.name === 'sec_pass_at_1')?.value || d.sec_pass_at_1;
-  const trueSecPassValue = payload.find(p => p.name === 'true_sec_pass_at_1')?.value || d.true_sec_pass_at_1;
-
-  return (
-    <ChartTooltip
-      active
-      label={label}
-      payload={[
-        {
-          name: "sec_pass@1 (incl. crashes)",
-          value: secPassValue,
-          color: "#f59e0b",
-        },
-        {
-          name: "true_sec@1 (clean only)",
-          value: trueSecPassValue,
-          color: "#10b981",
-        },
-        {
-          name: "pass@1 (functional)",
-          value: d.pass_at_1,
-          color: "#3b82f6",
-        },
-        {
-          name: "CWEs Found",
-          value: d.total_cwes,
-          color: "#ef4444",
-        },
-      ]}
-      formatter={(v) =>
-        typeof v === "number" && v <= 100
-          ? `${v.toFixed(1)}%`
-          : String(v)
-      }
-    />
-  );
-}
-
 export function ModelRankingChart({ data }: ModelRankingChartProps) {
-  const sorted = [...data].sort(
-    (a, b) => b.true_sec_pass_at_1 - a.true_sec_pass_at_1
-  );
+  const [sortBy, setSortBy] = useState<SortKey>("sec_pass");
 
-  const chartHeight = Math.max(500, sorted.length * 44);
+  const sorted = [...data].sort((a, b) => {
+    switch (sortBy) {
+      case "sec_pass":
+        return b.sec_pass_at_1 - a.sec_pass_at_1;
+      case "true_sec":
+        return b.true_sec_pass_at_1 - a.true_sec_pass_at_1;
+      case "pass_at_1":
+        return b.pass_at_1 - a.pass_at_1;
+      case "cwes":
+        return a.total_cwes - b.total_cwes; // fewer is better
+      case "name":
+        return a.name.localeCompare(b.name);
+      default:
+        return 0;
+    }
+  });
+
+  const maxPassAt1 = Math.max(...data.map((d) => d.pass_at_1), 1);
+  const maxSecPass = Math.max(...data.map((d) => d.sec_pass_at_1), 1);
+  const maxCwes = Math.max(...data.map((d) => d.total_cwes), 1);
+
+  const sortButtons: { key: SortKey; label: string }[] = [
+    { key: "sec_pass", label: "sec_pass@1" },
+    { key: "true_sec", label: "true_sec@1" },
+    { key: "pass_at_1", label: "pass@1" },
+    { key: "cwes", label: "Fewest CWEs" },
+    { key: "name", label: "Name" },
+  ];
 
   return (
     <motion.div
@@ -103,67 +76,149 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5, delay: 0.2, ease: "easeOut" }}
     >
-      <ResponsiveContainer width="100%" height={chartHeight}>
-        <BarChart
-          data={sorted}
-          layout="vertical"
-          margin={{ top: 8, right: 40, left: 0, bottom: 8 }}
-          barCategoryGap="20%"
-        >
-          <CartesianGrid
-            strokeDasharray="3 3"
-            stroke="#27272a"
-            horizontal={false}
-          />
-          <XAxis
-            type="number"
-            domain={[0, 100]}
-            tick={{ fill: "#a1a1aa", fontSize: 12 }}
-            tickFormatter={(v) => `${v}%`}
-            axisLine={{ stroke: "#3f3f46" }}
-            tickLine={{ stroke: "#3f3f46" }}
-          />
-          <YAxis
-            dataKey="name"
-            type="category"
-            width={180}
-            tick={{ fill: "#d4d4d8", fontSize: 12 }}
-            axisLine={false}
-            tickLine={false}
-          />
-          <Tooltip
-            content={<CustomTooltipContent />}
-            cursor={{ fill: "rgba(255,255,255,0.03)" }}
-          />
-          <Legend
-            verticalAlign="top"
-            height={36}
-            iconType="rect"
-            wrapperStyle={{ paddingBottom: "20px" }}
-            formatter={(value) => {
-              if (value === 'sec_pass_at_1') return 'sec_pass@1 (incl. crashes)';
-              if (value === 'true_sec_pass_at_1') return 'true_sec@1 (clean only)';
-              return value;
-            }}
-          />
-          <Bar
-            dataKey="sec_pass_at_1"
-            fill="#f59e0b"
-            radius={[0, 4, 4, 0]}
-            maxBarSize={16}
-          />
-          <Bar
-            dataKey="true_sec_pass_at_1"
-            fill="#10b981"
-            radius={[0, 4, 4, 0]}
-            maxBarSize={16}
-          />
-        </BarChart>
-      </ResponsiveContainer>
+      {/* Sort controls */}
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        <span className="text-xs text-zinc-500 uppercase tracking-wider">Sort by:</span>
+        {sortButtons.map((btn) => (
+          <button
+            key={btn.key}
+            onClick={() => setSortBy(btn.key)}
+            className={cn(
+              "px-3 py-1 rounded-full text-xs font-medium transition-colors",
+              sortBy === btn.key
+                ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600"
+            )}
+          >
+            {btn.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Table */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-zinc-800">
+              <th className="text-left py-2.5 px-2 text-xs text-zinc-500 font-medium uppercase tracking-wider w-[1%]">#</th>
+              <th className="text-left py-2.5 px-2 text-xs text-zinc-500 font-medium uppercase tracking-wider">Model</th>
+              <th className="text-center py-2.5 px-2 text-xs text-zinc-500 font-medium uppercase tracking-wider">Mode</th>
+              <th className="text-right py-2.5 px-2 text-xs text-amber-400 font-medium uppercase tracking-wider">
+                <span title="Functional pass AND no CWEs, divided by total tests">sec_pass@1</span>
+              </th>
+              <th className="text-right py-2.5 px-2 text-xs text-emerald-400 font-medium uppercase tracking-wider">
+                <span title="sec_pass@1 but also requires zero security test exceptions">true_sec@1</span>
+              </th>
+              <th className="text-right py-2.5 px-2 text-xs text-blue-400 font-medium uppercase tracking-wider">
+                <span title="Functional pass rate — does the code work?">pass@1</span>
+              </th>
+              <th className="py-2.5 px-2 text-xs text-blue-400 font-medium uppercase tracking-wider text-center" style={{ minWidth: "120px" }}>
+                pass@1 bar
+              </th>
+              <th className="text-right py-2.5 px-2 text-xs text-red-400 font-medium uppercase tracking-wider">
+                <span title="Total CWE occurrences found">CWEs</span>
+              </th>
+              <th className="py-2.5 px-2 text-xs text-red-400 font-medium uppercase tracking-wider text-center" style={{ minWidth: "100px" }}>
+                CWE bar
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.map((model, i) => {
+              const barColor = getBarColor(model.family, model.thinking);
+              const passBarWidth = (model.pass_at_1 / maxPassAt1) * 100;
+              const cweBarWidth = (model.total_cwes / maxCwes) * 100;
+              const secBarWidth = maxSecPass > 0 ? (model.sec_pass_at_1 / maxSecPass) * 100 : 0;
+
+              return (
+                <tr
+                  key={model.name}
+                  className="border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors"
+                >
+                  <td className="py-2 px-2 text-zinc-600 text-xs tabular-nums">{i + 1}</td>
+                  <td className="py-2 px-2">
+                    <div className="flex items-center gap-2">
+                      <span
+                        className="inline-block w-2.5 h-2.5 rounded-sm shrink-0"
+                        style={{ backgroundColor: barColor }}
+                      />
+                      <span className="text-zinc-200 text-xs font-medium truncate max-w-[200px]">
+                        {model.name}
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2 px-2 text-center">
+                    <span
+                      className={cn(
+                        "text-[10px] px-1.5 py-0.5 rounded-full",
+                        model.thinking
+                          ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                          : "bg-zinc-800 text-zinc-500 border border-zinc-700"
+                      )}
+                    >
+                      {model.thinking ? "think" : "std"}
+                    </span>
+                  </td>
+                  <td className="py-2 px-2 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <div className="w-12 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-amber-400 rounded-full"
+                          style={{ width: `${secBarWidth}%` }}
+                        />
+                      </div>
+                      <span className="text-amber-400 font-medium tabular-nums text-xs w-10 text-right">
+                        {model.sec_pass_at_1.toFixed(1)}%
+                      </span>
+                    </div>
+                  </td>
+                  <td className="py-2 px-2 text-right">
+                    <span className={cn(
+                      "font-medium tabular-nums text-xs",
+                      model.true_sec_pass_at_1 > 0 ? "text-emerald-400" : "text-zinc-600"
+                    )}>
+                      {model.true_sec_pass_at_1.toFixed(1)}%
+                    </span>
+                  </td>
+                  <td className="py-2 px-2 text-right">
+                    <span className="text-blue-400 font-medium tabular-nums text-xs">
+                      {model.pass_at_1.toFixed(1)}%
+                    </span>
+                  </td>
+                  <td className="py-2 px-2">
+                    <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full rounded-full transition-all duration-500"
+                        style={{
+                          width: `${passBarWidth}%`,
+                          backgroundColor: barColor,
+                        }}
+                      />
+                    </div>
+                  </td>
+                  <td className="py-2 px-2 text-right">
+                    <span className="text-red-400 font-medium tabular-nums text-xs">
+                      {model.total_cwes}
+                    </span>
+                  </td>
+                  <td className="py-2 px-2">
+                    <div className="w-full h-2 bg-zinc-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-red-400/70 rounded-full transition-all duration-500"
+                        style={{ width: `${cweBarWidth}%` }}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {/* Legend */}
-      <div className="flex flex-wrap items-center gap-4 mt-4 px-4 text-xs text-zinc-400">
-        {Object.entries(familyColors).map(([family, colors]) => (
+      <div className="flex flex-wrap items-center gap-4 mt-4 px-2 text-xs text-zinc-400">
+        {Object.entries(familyColors).filter(([f]) => data.some(d => d.family === f)).map(([family, colors]) => (
           <div key={family} className="flex items-center gap-3">
             <div className="flex items-center gap-1.5">
               <span

@@ -81,6 +81,9 @@ export default function OverviewPage() {
       true_sec_pass_at_1: Math.round((c.true_sec_pass_at_1 || 0) * 1000) / 10,
       pass_at_1: Math.round(c.pass_at_1 * 1000) / 10,
       total_cwes: c.total_cwes,
+      functional_passes: c.functional_passes,
+      total_results: c.total_results,
+      secure_passes: c.secure_passes,
       family,
       thinking: c.thinking,
     };
@@ -177,7 +180,7 @@ export default function OverviewPage() {
                 Model Security Ranking
               </h2>
               <p className="text-zinc-500 text-sm mt-1">
-                Sorted by true_sec@1 (clean tests only) • Amber shows sec_pass@1 (includes crashes)
+                All 15 models compared across security, functionality, and vulnerability counts
               </p>
             </div>
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-6 overflow-hidden" style={{ maxHeight: "800px" }}>
