@@ -214,22 +214,66 @@ def build_and_start(app):
         shutil.rmtree(build_dir, ignore_errors=True)
 
 
-def run_zap_active_scan(port, report_dir):
+def get_openapi_spec(scenario_name):
+    """Extract OpenAPI spec from BaxBench scenario definition."""
+    import sys
+    src_dir = str(ROOT / "src")
+    if src_dir not in sys.path:
+        sys.path.insert(0, src_dir)
+    try:
+        from scenarios import all_scenarios
+        for s in all_scenarios:
+            if s.id == scenario_name:
+                return s.api_spec
+    except Exception as e:
+        print(f"    Could not load scenario spec: {e}")
+    return None
+
+
+def run_zap_active_scan(port, report_dir, scenario_name=None):
     """Run ZAP active scan against app on given port. Returns parsed alerts."""
     client = docker.from_env()
     report_dir = pathlib.Path(report_dir)
     report_dir.mkdir(parents=True, exist_ok=True)
 
+    # Export OpenAPI spec for ZAP to import
+    spec = get_openapi_spec(scenario_name) if scenario_name else None
+    if spec:
+        # Fix the spec to point to the actual running app
+        spec = spec.replace("url: /", f"url: http://host.docker.internal:{port}/")
+        # Add server URL if not present
+        import yaml
+        spec_data = yaml.safe_load(spec)
+        spec_data["servers"] = [{"url": f"http://host.docker.internal:{port}"}]
+        spec_yaml = yaml.dump(spec_data, default_flow_style=False)
+        spec_path = report_dir / "openapi_spec.yaml"
+        spec_path.write_text(spec_yaml)
+        print(f"    OpenAPI spec exported ({len(spec_data.get('paths', {}))} endpoints)")
+
+        # Use zap-api-scan with the spec file for proper endpoint discovery
+        zap_command = (
+            f"zap-api-scan.py "
+            f"-t /zap/wrk/openapi_spec.yaml "
+            f"-f openapi "
+            f"-J /zap/wrk/zap_active_report.json "
+            f"-r /zap/wrk/zap_active_report.html "
+            f"-I"
+        )
+    else:
+        # Fallback to full scan without spec
+        zap_command = (
+            f"zap-full-scan.py "
+            f"-t http://host.docker.internal:{port}/ "
+            f"-J /zap/wrk/zap_active_report.json "
+            f"-r /zap/wrk/zap_active_report.html "
+            f"-I -m 5"
+        )
+        print("    No OpenAPI spec available, using full scan fallback")
+
     try:
         zap_container = client.containers.run(
             ZAP_IMAGE,
-            command=(
-                f"zap-full-scan.py "
-                f"-t http://host.docker.internal:{port}/ "
-                f"-J /zap/wrk/zap_active_report.json "
-                f"-r /zap/wrk/zap_active_report.html "
-                f"-I -m 5"
-            ),
+            command=zap_command,
             detach=True,
             user="root",
             extra_hosts={"host.docker.internal": "host-gateway"},
@@ -435,7 +479,7 @@ def main():
             print(f"  App running on port {port}")
             print("  Running ZAP active scan (this takes 10-30 min)...")
 
-            zap_alerts, exit_code = run_zap_active_scan(port, str(sample_dir))
+            zap_alerts, exit_code = run_zap_active_scan(port, str(sample_dir), scenario_name=app["scenario"])
 
             print(f"  ZAP scan complete (exit: {exit_code}, alerts: {len(zap_alerts)})")
 

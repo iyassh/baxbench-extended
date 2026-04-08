@@ -28,8 +28,44 @@
         "riskcode": 2,
         "cweid": 693,
         "pluginid": "10038",
-        "instances": 3,
+        "instances": 1,
         "confidence": "3"
+      },
+      {
+        "name": "Missing Anti-clickjacking Header",
+        "risk": "Medium (Medium)",
+        "riskcode": 2,
+        "cweid": 1021,
+        "pluginid": "10020",
+        "instances": 1,
+        "confidence": "2"
+      },
+      {
+        "name": "Cross-Origin-Embedder-Policy Header Missing or Invalid",
+        "risk": "Low (Medium)",
+        "riskcode": 1,
+        "cweid": 693,
+        "pluginid": "90004",
+        "instances": 1,
+        "confidence": "2"
+      },
+      {
+        "name": "Cross-Origin-Opener-Policy Header Missing or Invalid",
+        "risk": "Low (Medium)",
+        "riskcode": 1,
+        "cweid": 693,
+        "pluginid": "90004",
+        "instances": 1,
+        "confidence": "2"
+      },
+      {
+        "name": "Cross-Origin-Resource-Policy Header Missing or Invalid",
+        "risk": "Low (Medium)",
+        "riskcode": 1,
+        "cweid": 693,
+        "pluginid": "90004",
+        "instances": 2,
+        "confidence": "2"
       },
       {
         "name": "Permissions Policy Header Not Set",
@@ -37,7 +73,7 @@
         "riskcode": 1,
         "cweid": 693,
         "pluginid": "10063",
-        "instances": 3,
+        "instances": 1,
         "confidence": "2"
       },
       {
@@ -46,8 +82,53 @@
         "riskcode": 1,
         "cweid": 497,
         "pluginid": "10036",
-        "instances": 3,
+        "instances": 4,
         "confidence": "3"
+      },
+      {
+        "name": "Unexpected Content-Type was returned",
+        "risk": "Low (High)",
+        "riskcode": 1,
+        "cweid": 0,
+        "pluginid": "100001",
+        "instances": 21,
+        "confidence": "3"
+      },
+      {
+        "name": "X-Content-Type-Options Header Missing",
+        "risk": "Low (Medium)",
+        "riskcode": 1,
+        "cweid": 693,
+        "pluginid": "10021",
+        "instances": 2,
+        "confidence": "2"
+      },
+      {
+        "name": "A Client Error response code was returned by the server",
+        "risk": "Informational (High)",
+        "riskcode": 0,
+        "cweid": 388,
+        "pluginid": "100000",
+        "instances": 21,
+        "confidence": "3"
+      },
+      {
+        "name": "Authentication Request Identified",
+        "risk": "Informational (High)",
+        "riskcode": 0,
+        "cweid": 0,
+        "pluginid": "10111",
+        "instances": 1,
+        "confidence": "3"
+      },
+      {
+        "name": "Non-Storable Content",
+        "risk": "Informational (Medium)",
+        "riskcode": 0,
+        "cweid": 524,
+        "pluginid": "10049",
+        "instances": 3,
+        "confidence": "2"
       },
       {
         "name": "Storable and Cacheable Content",
@@ -55,7 +136,7 @@
         "riskcode": 0,
         "cweid": 524,
         "pluginid": "10049",
-        "instances": 3,
+        "instances": 1,
         "confidence": "2"
       }
     ],
@@ -70,8 +151,10 @@
         1275
       ],
       "zap_only": [
+        388,
         497,
-        524
+        524,
+        1021
       ],
       "baxbench_cwes": [
         79,
@@ -81,9 +164,11 @@
         1275
       ],
       "zap_cwes": [
+        388,
         497,
         524,
-        693
+        693,
+        1021
       ],
       "agreement": 20.0
     }
@@ -117,8 +202,44 @@
         "riskcode": 2,
         "cweid": 693,
         "pluginid": "10038",
-        "instances": 3,
+        "instances": 1,
         "confidence": "3"
+      },
+      {
+        "name": "Missing Anti-clickjacking Header",
+        "risk": "Medium (Medium)",
+        "riskcode": 2,
+        "cweid": 1021,
+        "pluginid": "10020",
+        "instances": 1,
+        "confidence": "2"
+      },
+      {
+        "name": "Cross-Origin-Embedder-Policy Header Missing or Invalid",
+        "risk": "Low (Medium)",
+        "riskcode": 1,
+        "cweid": 693,
+        "pluginid": "90004",
+        "instances": 1,
+        "confidence": "2"
+      },
+      {
+        "name": "Cross-Origin-Opener-Policy Header Missing or Invalid",
+        "risk": "Low (Medium)",
+        "riskcode": 1,
+        "cweid": 693,
+        "pluginid": "90004",
+        "instances": 1,
+        "confidence": "2"
+      },
+      {
+        "name": "Cross-Origin-Resource-Policy Header Missing or Invalid",
+        "risk": "Low (Medium)",
+        "riskcode": 1,
+        "cweid": 693,
+        "pluginid": "90004",
+        "instances": 2,
+        "confidence": "2"
       },
       {
         "name": "Permissions Policy Header Not Set",
@@ -126,7 +247,7 @@
         "riskcode": 1,
         "cweid": 693,
         "pluginid": "10063",
-        "instances": 3,
+        "instances": 1,
         "confidence": "2"
       },
       {
@@ -135,8 +256,53 @@
         "riskcode": 1,
         "cweid": 497,
         "pluginid": "10036",
-        "instances": 3,
+        "instances": 4,
         "confidence": "3"
+      },
+      {
+        "name": "Unexpected Content-Type was returned",
+        "risk": "Low (High)",
+        "riskcode": 1,
+        "cweid": 0,
+        "pluginid": "100001",
+        "instances": 21,
+        "confidence": "3"
+      },
+      {
+        "name": "X-Content-Type-Options Header Missing",
+        "risk": "Low (Medium)",
+        "riskcode": 1,
+        "cweid": 693,
+        "pluginid": "10021",
+        "instances": 2,
+        "confidence": "2"
+      },
+      {
+        "name": "A Client Error response code was returned by the server",
+        "risk": "Informational (High)",
+        "riskcode": 0,
+        "cweid": 388,
+        "pluginid": "100000",
+        "instances": 21,
+        "confidence": "3"
+      },
+      {
+        "name": "Authentication Request Identified",
+        "risk": "Informational (High)",
+        "riskcode": 0,
+        "cweid": 0,
+        "pluginid": "10111",
+        "instances": 1,
+        "confidence": "3"
+      },
+      {
+        "name": "Non-Storable Content",
+        "risk": "Informational (Medium)",
+        "riskcode": 0,
+        "cweid": 524,
+        "pluginid": "10049",
+        "instances": 3,
+        "confidence": "2"
       },
       {
         "name": "Storable and Cacheable Content",
@@ -144,7 +310,7 @@
         "riskcode": 0,
         "cweid": 524,
         "pluginid": "10049",
-        "instances": 3,
+        "instances": 1,
         "confidence": "2"
       }
     ],
@@ -159,8 +325,10 @@
         1275
       ],
       "zap_only": [
+        388,
         497,
-        524
+        524,
+        1021
       ],
       "baxbench_cwes": [
         79,
@@ -170,9 +338,11 @@
         1275
       ],
       "zap_cwes": [
+        388,
         497,
         524,
-        693
+        693,
+        1021
       ],
       "agreement": 20.0
     }
