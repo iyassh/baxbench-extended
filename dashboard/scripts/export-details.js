@@ -18,8 +18,9 @@ fs.mkdirSync(OUT_DIR, { recursive: true });
 
 const allResults = JSON.parse(fs.readFileSync(DATA_PATH, "utf8"));
 
-function parsePrompt(codePath) {
-  const genLogPath = path.join(codePath, "..", "..", "gen.log");
+function parsePrompt(sampleDir) {
+  // gen.log is in the parent of sample0/ (the temp0.2-openapi-xxx/ directory)
+  const genLogPath = path.join(sampleDir, "..", "gen.log");
   if (!fs.existsSync(genLogPath)) return null;
   const content = fs.readFileSync(genLogPath, "utf8");
   const promptStart = content.indexOf("built prompt:");
@@ -48,8 +49,7 @@ function getCodeFiles(codePath) {
     });
 }
 
-function getTestLogs(codePath) {
-  const sampleDir = path.dirname(codePath);
+function getTestLogs(sampleDir) {
   let buildLog = "";
   const testLogPath = path.join(sampleDir, "test.log");
   if (fs.existsSync(testLogPath)) {
@@ -92,17 +92,19 @@ for (const [configName, results] of Object.entries(allResults)) {
   let skipped = 0;
 
   for (const r of results) {
-    // code_path in DB is relative to project root and points to a file; we need its directory
-    const codePath = r.code_path ? path.resolve(PROJECT_ROOT, path.dirname(r.code_path)) : null;
-    if (!codePath || !fs.existsSync(codePath)) {
+    // code_path in DB points to the code/ directory itself
+    const codeDir = r.code_path ? path.resolve(PROJECT_ROOT, r.code_path) : null;
+    if (!codeDir) {
       skipped++;
       continue;
     }
+    // sample0/ is the parent of code/
+    const sampleDir = path.dirname(codeDir);
 
     details[r.id] = {
-      prompt: parsePrompt(codePath),
-      code: getCodeFiles(codePath),
-      logs: getTestLogs(codePath),
+      prompt: parsePrompt(sampleDir),
+      code: fs.existsSync(codeDir) ? getCodeFiles(codeDir) : [],
+      logs: getTestLogs(sampleDir),
     };
   }
 
