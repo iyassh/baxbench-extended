@@ -12,6 +12,7 @@ const { globSync } = require("glob");
 
 const DATA_PATH = path.join(__dirname, "..", "data", "results-by-config.json");
 const OUT_DIR = path.join(__dirname, "..", "public", "details");
+const PROJECT_ROOT = path.join(__dirname, "..", "..");
 
 fs.mkdirSync(OUT_DIR, { recursive: true });
 
@@ -91,15 +92,17 @@ for (const [configName, results] of Object.entries(allResults)) {
   let skipped = 0;
 
   for (const r of results) {
-    if (!r.code_path || !fs.existsSync(r.code_path)) {
+    // code_path in DB is relative to project root and points to a file; we need its directory
+    const codePath = r.code_path ? path.resolve(PROJECT_ROOT, path.dirname(r.code_path)) : null;
+    if (!codePath || !fs.existsSync(codePath)) {
       skipped++;
       continue;
     }
 
     details[r.id] = {
-      prompt: parsePrompt(r.code_path),
-      code: getCodeFiles(r.code_path),
-      logs: getTestLogs(r.code_path),
+      prompt: parsePrompt(codePath),
+      code: getCodeFiles(codePath),
+      logs: getTestLogs(codePath),
     };
   }
 

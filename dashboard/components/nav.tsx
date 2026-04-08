@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import { cn } from "@/lib/utils";
-import { Shield, Command } from "lucide-react";
+import Image from "next/image";
+import { Command } from "lucide-react";
 
 const links = [
   { href: "/", label: "Overview" },
@@ -26,8 +27,8 @@ export function Nav() {
           href="/"
           className="flex items-center gap-2 font-[family-name:var(--font-display)] font-bold text-lg tracking-tight"
         >
-          <Shield className="h-5 w-5 text-emerald" />
-          CodeStrike
+          <Image src="/codestrike-logo.svg" alt="CodeStrike" width={28} height={28} />
+          <span className="bg-gradient-to-r from-teal-400 to-yellow-400 bg-clip-text text-transparent">CodeStrike</span>
         </Link>
 
         {/* Center: Nav links */}
