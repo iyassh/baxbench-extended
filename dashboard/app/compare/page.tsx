@@ -96,7 +96,7 @@ export default function ComparePage() {
   // ── Transform framework data ──────────────────────────
   const fwByConfig: Record<
     string,
-    Record<string, { secure: number; total: number }>
+    Record<string, { secure: number; functional: number; total: number }>
   > = {};
   const fwTotals: Record<
     string,
@@ -113,6 +113,7 @@ export default function ComparePage() {
         : 0;
     fwByConfig[row.config_name][row.framework] = {
       secure: row.secure_passes,
+      functional: row.functional_passes,
       total: row.total,
     };
 
@@ -124,26 +125,27 @@ export default function ComparePage() {
     fwTotals[row.framework].configs.push({ config: row.config_name, value: rate });
   }
 
+  const fwHelper = (fws: Record<string, { secure: number; functional: number; total: number }>, fw: string, metric: string) => {
+    const d = fws[fw];
+    if (!d || d.total === 0) return 0;
+    if (metric === "sec_pass") return Math.round((d.secure / d.total) * 1000) / 10;
+    if (metric === "pass_at_1") return Math.round((d.functional / d.total) * 1000) / 10;
+    if (metric === "sec_working") return d.functional > 0 ? Math.round((d.secure / d.functional) * 1000) / 10 : 0;
+    return 0;
+  };
+
   const frameworkChartData: FrameworkChartRow[] = Object.entries(fwByConfig).map(
     ([config, fws]) => ({
       config,
-      flask: fws["Python-Flask"]
-        ? Math.round(
-            (fws["Python-Flask"].secure / fws["Python-Flask"].total) * 1000
-          ) / 10
-        : 0,
-      express: fws["JavaScript-express"]
-        ? Math.round(
-            (fws["JavaScript-express"].secure /
-              fws["JavaScript-express"].total) *
-              1000
-          ) / 10
-        : 0,
-      fiber: fws["Go-Fiber"]
-        ? Math.round(
-            (fws["Go-Fiber"].secure / fws["Go-Fiber"].total) * 1000
-          ) / 10
-        : 0,
+      flask: fwHelper(fws, "Python-Flask", "sec_pass"),
+      express: fwHelper(fws, "JavaScript-express", "sec_pass"),
+      fiber: fwHelper(fws, "Go-Fiber", "sec_pass"),
+      flask_pass: fwHelper(fws, "Python-Flask", "pass_at_1"),
+      express_pass: fwHelper(fws, "JavaScript-express", "pass_at_1"),
+      fiber_pass: fwHelper(fws, "Go-Fiber", "pass_at_1"),
+      flask_secw: fwHelper(fws, "Python-Flask", "sec_working"),
+      express_secw: fwHelper(fws, "JavaScript-express", "sec_working"),
+      fiber_secw: fwHelper(fws, "Go-Fiber", "sec_working"),
     })
   );
 

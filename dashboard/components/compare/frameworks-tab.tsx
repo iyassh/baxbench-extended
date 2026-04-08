@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   BarChart,
@@ -12,12 +13,19 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { ChartTooltip } from "@/components/chart-tooltip";
+import { cn } from "@/lib/utils";
 
 export interface FrameworkChartRow {
   config: string;
   flask: number;
   express: number;
   fiber: number;
+  flask_pass?: number;
+  express_pass?: number;
+  fiber_pass?: number;
+  flask_secw?: number;
+  express_secw?: number;
+  fiber_secw?: number;
 }
 
 export interface FrameworkSummary {
@@ -26,6 +34,8 @@ export interface FrameworkSummary {
   best: { config: string; value: number };
   worst: { config: string; value: number };
 }
+
+type MetricKey = "sec_pass" | "pass_at_1" | "sec_working";
 
 interface FrameworksTabProps {
   chartData: FrameworkChartRow[];
@@ -72,18 +82,54 @@ function CustomTooltipContent(props: {
 }
 
 export function FrameworksTab({ chartData, summaries }: FrameworksTabProps) {
+  const [metric, setMetric] = useState<MetricKey>("sec_pass");
+
+  const metricButtons: { key: MetricKey; label: string }[] = [
+    { key: "sec_pass", label: "sec_pass@1" },
+    { key: "pass_at_1", label: "pass@1" },
+    { key: "sec_working", label: "Sec (Working)" },
+  ];
+
+  const metricLabels: Record<MetricKey, string> = {
+    sec_pass: "sec_pass@1 by Framework",
+    pass_at_1: "pass@1 by Framework (code quality)",
+    sec_working: "Sec (Working) by Framework (security of working code)",
+  };
+
+  const flaskKey = metric === "pass_at_1" ? "flask_pass" : metric === "sec_working" ? "flask_secw" : "flask";
+  const expressKey = metric === "pass_at_1" ? "express_pass" : metric === "sec_working" ? "express_secw" : "express";
+  const fiberKey = metric === "pass_at_1" ? "fiber_pass" : metric === "sec_working" ? "fiber_secw" : "fiber";
+
   return (
     <div className="space-y-8">
-      {/* Stacked bar chart */}
+      {/* Chart with metric toggle */}
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, ease: "easeOut" }}
         className="bg-zinc-900 border border-zinc-800 rounded-xl p-6"
       >
-        <h3 className="text-lg font-semibold text-zinc-100 mb-4">
-          sec_pass@1 by Framework
-        </h3>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h3 className="text-lg font-semibold text-zinc-100">
+            {metricLabels[metric]}
+          </h3>
+          <div className="flex items-center gap-2">
+            {metricButtons.map((btn) => (
+              <button
+                key={btn.key}
+                onClick={() => setMetric(btn.key)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium transition-colors",
+                  metric === btn.key
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                    : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600"
+                )}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={420}>
           <BarChart
             data={chartData}
@@ -124,21 +170,21 @@ export function FrameworksTab({ chartData, summaries }: FrameworksTabProps) {
               )}
             />
             <Bar
-              dataKey="flask"
+              dataKey={flaskKey}
               name="Flask"
               fill="#3b82f6"
               radius={[4, 4, 0, 0]}
               maxBarSize={24}
             />
             <Bar
-              dataKey="express"
+              dataKey={expressKey}
               name="Express"
               fill="#f59e0b"
               radius={[4, 4, 0, 0]}
               maxBarSize={24}
             />
             <Bar
-              dataKey="fiber"
+              dataKey={fiberKey}
               name="Fiber"
               fill="#10b981"
               radius={[4, 4, 0, 0]}
