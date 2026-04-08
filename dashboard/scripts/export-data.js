@@ -187,7 +187,10 @@ const frameworkComparison = db
       SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as functional_passes,
       SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
         SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
-      ) THEN 1 ELSE 0 END) as secure_passes
+      ) THEN 1 ELSE 0 END) as secure_passes,
+      SUM(CASE WHEN r.functional_pass = 1 AND NOT EXISTS (
+        SELECT 1 FROM result_cwes rc WHERE rc.result_id = r.id
+      ) AND r.num_st_exceptions = 0 THEN 1 ELSE 0 END) as truly_secure_passes
     FROM results r
     JOIN configs c ON r.config_id = c.id
     GROUP BY r.framework, c.name

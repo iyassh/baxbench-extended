@@ -49,6 +49,7 @@ export function loadFrameworkComparison() {
     total: number;
     functional_passes: number;
     secure_passes: number;
+    truly_secure_passes?: number;
   }[]>("framework-comparison");
 }
 

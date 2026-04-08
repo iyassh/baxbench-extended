@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { motion } from "framer-motion";
 import {
   BarChart,
@@ -13,11 +14,18 @@ import {
 } from "recharts";
 import { ChartTooltip } from "@/components/chart-tooltip";
 import { ArrowUp, ArrowDown } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 export interface ThinkingChartRow {
   family: string;
   standard: number;
   thinking: number;
+  standard_true?: number;
+  thinking_true?: number;
+  standard_pass?: number;
+  thinking_pass?: number;
+  standard_secw?: number;
+  thinking_secw?: number;
 }
 
 export interface ThinkingDeltaRow {
@@ -26,6 +34,8 @@ export interface ThinkingDeltaRow {
   thinking: number;
   change: number;
 }
+
+type MetricKey = "sec_pass" | "true_sec" | "pass_at_1" | "sec_working";
 
 interface ThinkingTabProps {
   chartData: ThinkingChartRow[];
@@ -60,7 +70,27 @@ function CustomTooltipContent(props: {
 }
 
 export function ThinkingTab({ chartData, deltaData }: ThinkingTabProps) {
+  const [metric, setMetric] = useState<MetricKey>("sec_pass");
   const chartHeight = Math.max(300, chartData.length * 60);
+
+  const metricButtons: { key: MetricKey; label: string }[] = [
+    { key: "sec_pass", label: "sec_pass@1" },
+    { key: "true_sec", label: "true_sec@1" },
+    { key: "pass_at_1", label: "pass@1" },
+    { key: "sec_working", label: "Sec (Working)" },
+  ];
+
+  const metricLabels: Record<MetricKey, string> = {
+    sec_pass: "sec_pass@1: Standard vs Thinking",
+    true_sec: "true_sec@1: Standard vs Thinking",
+    pass_at_1: "pass@1: Standard vs Thinking (code quality)",
+    sec_working: "Sec (Working): Standard vs Thinking",
+  };
+
+  const suffixMap: Record<MetricKey, string> = { sec_pass: "", true_sec: "_true", pass_at_1: "_pass", sec_working: "_secw" };
+  const s = suffixMap[metric];
+  const stdKey = `standard${s}`;
+  const thinkKey = `thinking${s}`;
 
   return (
     <div className="space-y-8">
@@ -71,9 +101,27 @@ export function ThinkingTab({ chartData, deltaData }: ThinkingTabProps) {
         transition={{ duration: 0.5, ease: "easeOut" }}
         className="bg-zinc-900 border border-zinc-800 rounded-xl p-6"
       >
-        <h3 className="text-lg font-semibold text-zinc-100 mb-4">
-          sec_pass@1: Standard vs Thinking
-        </h3>
+        <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <h3 className="text-lg font-semibold text-zinc-100">
+            {metricLabels[metric]}
+          </h3>
+          <div className="flex items-center gap-2">
+            {metricButtons.map((btn) => (
+              <button
+                key={btn.key}
+                onClick={() => setMetric(btn.key)}
+                className={cn(
+                  "px-3 py-1 rounded-full text-xs font-medium transition-colors",
+                  metric === btn.key
+                    ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/30"
+                    : "bg-zinc-800 text-zinc-400 border border-zinc-700 hover:border-zinc-600"
+                )}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
+        </div>
         <ResponsiveContainer width="100%" height={chartHeight}>
           <BarChart
             data={chartData}
@@ -114,14 +162,14 @@ export function ThinkingTab({ chartData, deltaData }: ThinkingTabProps) {
               )}
             />
             <Bar
-              dataKey="standard"
+              dataKey={stdKey}
               name="Standard"
               fill="#71717a"
               radius={[0, 4, 4, 0]}
               maxBarSize={20}
             />
             <Bar
-              dataKey="thinking"
+              dataKey={thinkKey}
               name="Thinking"
               fill="#a855f7"
               radius={[0, 4, 4, 0]}

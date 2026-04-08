@@ -82,6 +82,12 @@ export default function ComparePage() {
     family: pair.standard.name.replace("-standard", ""),
     standard: Math.round(pair.standard.sec_pass_at_1 * 1000) / 10,
     thinking: Math.round(pair.thinking.sec_pass_at_1 * 1000) / 10,
+    standard_true: Math.round((pair.standard.true_sec_pass_at_1 || 0) * 1000) / 10,
+    thinking_true: Math.round((pair.thinking.true_sec_pass_at_1 || 0) * 1000) / 10,
+    standard_pass: Math.round(pair.standard.pass_at_1 * 1000) / 10,
+    thinking_pass: Math.round(pair.thinking.pass_at_1 * 1000) / 10,
+    standard_secw: pair.standard.functional_passes > 0 ? Math.round((pair.standard.secure_passes / pair.standard.functional_passes) * 1000) / 10 : 0,
+    thinking_secw: pair.thinking.functional_passes > 0 ? Math.round((pair.thinking.secure_passes / pair.thinking.functional_passes) * 1000) / 10 : 0,
   }));
 
   const thinkingDeltaData: ThinkingDeltaRow[] = thinkingDeltaRaw.map(
@@ -96,7 +102,7 @@ export default function ComparePage() {
   // ── Transform framework data ──────────────────────────
   const fwByConfig: Record<
     string,
-    Record<string, { secure: number; functional: number; total: number }>
+    Record<string, { secure: number; truly_secure: number; functional: number; total: number }>
   > = {};
   const fwTotals: Record<
     string,
@@ -113,6 +119,7 @@ export default function ComparePage() {
         : 0;
     fwByConfig[row.config_name][row.framework] = {
       secure: row.secure_passes,
+      truly_secure: row.truly_secure_passes || 0,
       functional: row.functional_passes,
       total: row.total,
     };
@@ -125,10 +132,11 @@ export default function ComparePage() {
     fwTotals[row.framework].configs.push({ config: row.config_name, value: rate });
   }
 
-  const fwHelper = (fws: Record<string, { secure: number; functional: number; total: number }>, fw: string, metric: string) => {
+  const fwHelper = (fws: Record<string, { secure: number; truly_secure: number; functional: number; total: number }>, fw: string, metric: string) => {
     const d = fws[fw];
     if (!d || d.total === 0) return 0;
     if (metric === "sec_pass") return Math.round((d.secure / d.total) * 1000) / 10;
+    if (metric === "true_sec") return Math.round((d.truly_secure / d.total) * 1000) / 10;
     if (metric === "pass_at_1") return Math.round((d.functional / d.total) * 1000) / 10;
     if (metric === "sec_working") return d.functional > 0 ? Math.round((d.secure / d.functional) * 1000) / 10 : 0;
     return 0;
@@ -140,6 +148,9 @@ export default function ComparePage() {
       flask: fwHelper(fws, "Python-Flask", "sec_pass"),
       express: fwHelper(fws, "JavaScript-express", "sec_pass"),
       fiber: fwHelper(fws, "Go-Fiber", "sec_pass"),
+      flask_true: fwHelper(fws, "Python-Flask", "true_sec"),
+      express_true: fwHelper(fws, "JavaScript-express", "true_sec"),
+      fiber_true: fwHelper(fws, "Go-Fiber", "true_sec"),
       flask_pass: fwHelper(fws, "Python-Flask", "pass_at_1"),
       express_pass: fwHelper(fws, "JavaScript-express", "pass_at_1"),
       fiber_pass: fwHelper(fws, "Go-Fiber", "pass_at_1"),

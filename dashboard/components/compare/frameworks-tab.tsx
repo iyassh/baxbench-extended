@@ -20,6 +20,9 @@ export interface FrameworkChartRow {
   flask: number;
   express: number;
   fiber: number;
+  flask_true?: number;
+  express_true?: number;
+  fiber_true?: number;
   flask_pass?: number;
   express_pass?: number;
   fiber_pass?: number;
@@ -35,7 +38,7 @@ export interface FrameworkSummary {
   worst: { config: string; value: number };
 }
 
-type MetricKey = "sec_pass" | "pass_at_1" | "sec_working";
+type MetricKey = "sec_pass" | "true_sec" | "pass_at_1" | "sec_working";
 
 interface FrameworksTabProps {
   chartData: FrameworkChartRow[];
@@ -86,19 +89,23 @@ export function FrameworksTab({ chartData, summaries }: FrameworksTabProps) {
 
   const metricButtons: { key: MetricKey; label: string }[] = [
     { key: "sec_pass", label: "sec_pass@1" },
+    { key: "true_sec", label: "true_sec@1" },
     { key: "pass_at_1", label: "pass@1" },
     { key: "sec_working", label: "Sec (Working)" },
   ];
 
   const metricLabels: Record<MetricKey, string> = {
     sec_pass: "sec_pass@1 by Framework",
+    true_sec: "true_sec@1 by Framework (clean tests only)",
     pass_at_1: "pass@1 by Framework (code quality)",
     sec_working: "Sec (Working) by Framework (security of working code)",
   };
 
-  const flaskKey = metric === "pass_at_1" ? "flask_pass" : metric === "sec_working" ? "flask_secw" : "flask";
-  const expressKey = metric === "pass_at_1" ? "express_pass" : metric === "sec_working" ? "express_secw" : "express";
-  const fiberKey = metric === "pass_at_1" ? "fiber_pass" : metric === "sec_working" ? "fiber_secw" : "fiber";
+  const suffixMap: Record<MetricKey, string> = { sec_pass: "", true_sec: "_true", pass_at_1: "_pass", sec_working: "_secw" };
+  const s = suffixMap[metric];
+  const flaskKey = `flask${s}`;
+  const expressKey = `express${s}`;
+  const fiberKey = `fiber${s}`;
 
   return (
     <div className="space-y-8">
