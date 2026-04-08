@@ -1,107 +1,228 @@
-# CodeStrike Security Benchmark Dashboard
+# CodeStrike Security Benchmark
 
-**COMP 4210 — Ethical Hacking | Group 8**
+**COMP 4210 -- Ethical Hacking | Group 8**
 
-A security benchmark analysis of 13 Claude model configurations using the [CodeStrike](https://codestrike.com) framework. Tests code generation across 28 security-critical scenarios, 3 web frameworks, and 3 safety prompt levels.
+A security benchmark analysis of AI-generated code using the [BaxBench](https://arxiv.org/abs/2502.11844) framework. Tests 15 model configurations across 28 security-critical scenarios, 3 web frameworks, and 3 safety prompt levels. Includes manual pentesting validation and OWASP ZAP comparison.
 
 ## Key Findings
 
-- **3,276 total test results** across 13 model configurations
-- **14 unique CWEs** detected (out of 23 monitored)
+- **3,276+ test results** across 15 model configurations (Claude, DeepSeek, LLaMA)
+- **14 unique CWEs** detected out of 23 monitored
 - **Best model:** opus-4.1-thinking at 14.3% sec_pass@1
-- **Safety prompts are critical:** Specific safety prompts improve security by 22.6 percentage points on average
-- **Without safety prompts, sec_pass@1 is essentially 0%** across all models
-- **Thinking mode has mixed results:** Improves opus-4.1 (+4.8pp) but hurts sonnet-4.5 (-4.4pp)
+- **Safety prompts matter:** Specific safety prompts improve security by +22.6pp on average
+- **Manual pentesting** found 41 vulnerabilities across 10 apps -- CodeStrike caught 11 (100% precision, 27% recall)
+- **ZAP comparison:** Only 14.3% agreement with CodeStrike across all scan modes
 - **CWE-693 (Missing Security Headers)** accounts for 56% of all vulnerabilities
 
-## Models Tested
+## Dashboard Pages
 
-| Model | Variants | sec_pass@1 (best) |
-|-------|----------|-------------------|
-| Claude Opus 4.6 | standard, thinking | 7.9% |
-| Claude Opus 4.1 | standard, thinking | 14.3% |
-| Claude Opus 4 | standard, thinking | 6.0% |
-| Claude Sonnet 4.6 | standard, thinking | 11.5% |
-| Claude Sonnet 4.5 | standard, thinking | 5.2% |
-| Claude Sonnet 4 | standard, thinking | 6.7% |
-| Claude Haiku 4.5 | standard | 10.7% |
+| Page | Description |
+|------|-------------|
+| **Overview** | Key insights, model ranking, vulnerability heatmap, safety prompt impact |
+| **Models** | Filterable model cards with radar charts and detail panels |
+| **Vulnerabilities** | CWE treemap and expandable vulnerability analysis |
+| **Compare** | Side-by-side: safety prompts, thinking vs standard, frameworks, model families |
+| **Pentest** | Manual pentesting results, 3-way comparison (CodeStrike vs ZAP vs Manual) |
+| **Results** | Browse individual test results with prompts, generated code, and test logs |
 
-## Project Structure
+---
 
-```
-codestrike/
-  dashboard/          # Next.js security dashboard
-  results/            # Benchmark results (13 configs x 252 tests each)
-  scripts/            # Benchmark runner scripts
-  src/                # CodeStrike source (scenarios, tests, CWE definitions)
-  docs/plans/         # Design documents
-```
-
-## Quick Start
+## Local Setup (for Group Members)
 
 ### Prerequisites
 
-- Node.js 18+
-- Python 3.12
-- Docker (for running benchmarks only)
-- pipenv
+- **Git**
+- **Node.js 18+** (check: `node -v`)
+- **npm** (comes with Node.js)
+- **Python 3.10+** (only needed for running benchmarks or pentest tools)
+- **Docker Desktop** (only needed for running benchmarks or ZAP scans)
 
-### Run the Dashboard
+### Step 1: Clone the Repository
 
 ```bash
-# Install dependencies
+git clone https://github.com/iyassh/baxbench-extended.git
+cd baxbench-extended
+```
+
+### Step 2: Install Dashboard Dependencies
+
+```bash
 cd dashboard
 npm install
+```
 
-# Start the dev server
+### Step 3: Run the Dashboard
+
+```bash
 npm run dev
 ```
 
-Visit [http://localhost:3000](http://localhost:3000)
+Open **http://localhost:3000** in your browser. The dashboard reads from pre-built JSON data files -- no database setup or API keys needed.
 
-The dashboard reads from `dashboard/codestrike.db` (SQLite, included in repo). No additional setup needed.
+That's it! You should see all pages: Overview, Models, Vulnerabilities, Compare, Pentest, and Results.
 
-### Dashboard Pages
+---
 
-- **Overview** — Key insights, model ranking chart, vulnerability heatmap, safety prompt impact
-- **Models** — Filterable model cards with detail panels and radar charts
-- **Vulnerabilities** — CWE treemap and expandable analysis
-- **Compare** — Side-by-side: safety prompts, thinking vs standard, frameworks, model families
+## Rebuilding Data Files (Optional)
 
-### Reload the Database (after new benchmark runs)
+If the SQLite database (`dashboard/baxbench.db`) is updated with new benchmark results, regenerate the JSON data files:
 
 ```bash
-pipenv run python scripts/load_results_db.py
+cd dashboard
+
+# Export main dashboard data (configs, results, CWEs, heatmap, etc.)
+node scripts/export-data.js
+
+# Export per-result details (prompts, generated code, test logs)
+node scripts/export-details.js
 ```
 
-### Run New Benchmarks
+The first script writes to `dashboard/data/*.json`, the second to `dashboard/public/details/*.json`.
 
-Requires the CLIProxyAPI running on port 8317 and Docker.
+### Updating the Database
+
+After running new benchmarks, load results into SQLite:
 
 ```bash
-# Generate code for a model
-pipenv run python scripts/rate_limit_queue.py --config sonnet-4.6-standard
+# From project root
+pipenv run python scripts/load_results_db.py
 
-# Test generated code (run once per safety prompt)
+# Then re-export (see above)
+```
+
+---
+
+## Running Benchmarks (Optional)
+
+Requires: Docker, Python 3.10+, Anthropic API key (for Claude) or Ollama (for free models).
+
+### Install Python Dependencies
+
+```bash
+# Using pipenv (recommended)
+pip install pipenv
+pipenv install
+
+# Or directly with pip
+pip install requests docker openai anthropic tabulate simple-parsing tqdm termcolor
+```
+
+### Set API Key (Claude models only)
+
+```bash
+export ANTHROPIC_API_KEY="sk-ant-your-key-here"
+```
+
+### Generate & Test
+
+```bash
+# Generate code for a single scenario (quick test)
+pipenv run python src/main.py \
+  --models claude-sonnet-4-6 \
+  --mode generate \
+  --safety_prompt none \
+  --scenarios Calculator \
+  --envs Python-Flask \
+  --results_dir results/sonnet-4.6-standard \
+  --n_samples 1
+
+# Test generated code
 pipenv run python src/main.py \
   --models claude-sonnet-4-6 \
   --mode test \
   --safety_prompt none \
-  --results_dir results/sonnet-4.6-standard \
-  --envs Python-Flask JavaScript-express Go-Fiber
+  --scenarios Calculator \
+  --envs Python-Flask \
+  --results_dir results/sonnet-4.6-standard
+```
 
-# Repeat for --safety_prompt generic and specific
+### Using Ollama (Free Models)
+
+```bash
+# Install and start Ollama
+brew install ollama   # macOS
+ollama serve &
+
+# Pull a model
+ollama pull deepseek-coder:6.7b
+
+# Run benchmark with --ollama flag
+pipenv run python src/main.py \
+  --models deepseek-coder:6.7b \
+  --mode generate \
+  --ollama \
+  --safety_prompt none \
+  --scenarios Calculator \
+  --envs Python-Flask \
+  --results_dir results/deepseek-test
+```
+
+---
+
+## Running Manual Pentest Tools (Optional)
+
+The pentest module provides an interactive CLI for manual security testing of generated apps.
+
+```bash
+# Show the OWASP WSTG checklist for a scenario
+pipenv run python src/main.py \
+  --mode pentest \
+  --show-checklist \
+  --models claude-haiku-4-5-20251001 \
+  --scenarios Login \
+  --envs Python-Flask \
+  --results_dir results/haiku-4.5-standard \
+  --only_samples 0
+
+# Interactive pentest session (launches Docker container + ZAP)
+pipenv run python src/main.py \
+  --mode pentest \
+  --interactive \
+  --models claude-haiku-4-5-20251001 \
+  --scenarios Login \
+  --envs Python-Flask \
+  --results_dir results/haiku-4.5-standard \
+  --only_samples 0
+```
+
+Results are saved as `manual_results.json` alongside the app's test results.
+
+---
+
+## Project Structure
+
+```
+baxbench-extended/
+  dashboard/                    # Next.js web dashboard
+    app/                        #   Pages (overview, models, pentest, results, etc.)
+    components/                 #   React components
+    data/                       #   Exported JSON data files
+    public/details/             #   Per-result prompt/code/log files
+    scripts/                    #   Data export scripts
+    baxbench.db                 #   SQLite database (source of truth)
+  results/                      # Benchmark results (15 configs)
+    {config}/                   #   e.g., haiku-4.5-standard/
+      {model}/{scenario}/{fw}/  #     Contains code/, test_results.json, manual_results.json
+  src/                          # CodeStrike benchmark source
+    main.py                     #   CLI entry point (generate/test/pentest modes)
+    pentest.py                  #   Manual pentesting module
+    checklists.py               #   OWASP WSTG checklist items
+    pentest_report.py           #   4-way comparison report generator
+    cwes.py                     #   CWE definitions (39 total)
+  scripts/                      # Automation scripts
+  docs/                         # Documentation and reports
+    PRESENTATION_GUIDE.md       #   30-minute presentation guide
+    MANUAL_PENTEST_REPORT.md    #   Pentest comparison report
+    MANUAL_PENTEST_METHODOLOGY.md
 ```
 
 ## Tech Stack
 
-**Dashboard:** Next.js 16, React 19, Tailwind CSS v4, shadcn/ui, Recharts, Framer Motion, better-sqlite3
+**Dashboard:** Next.js 16, React 19, Tailwind CSS v4, Recharts, Framer Motion, better-sqlite3
 
-**Benchmark:** Python 3.12, CodeStrike framework, Docker, Claude API
+**Benchmark:** Python 3.12, BaxBench framework, Docker, Claude API, Ollama
 
-## Based On
-
-This project extends the [CodeStrike](https://codestrike.com) benchmark framework ([paper](https://arxiv.org/abs/2502.11844)) for security test scenarios and evaluation.
+**Security Testing:** OWASP ZAP (Docker), Manual pentesting CLI, SAST regex patterns
 
 ## License
 
