@@ -135,6 +135,24 @@ const heatmap = db
   .all();
 write("heatmap", heatmap);
 
+// ── Heatmap by Safety Prompt ────────────────────────────
+const heatmapBySafety = db
+  .prepare(
+    `SELECT
+      c.name as model,
+      r.scenario,
+      r.safety_prompt,
+      COUNT(DISTINCT rc.id) as cwe_count,
+      COUNT(DISTINCT r.id) as total_tests
+    FROM configs c
+    JOIN results r ON r.config_id = c.id
+    LEFT JOIN result_cwes rc ON rc.result_id = r.id
+    GROUP BY c.name, r.scenario, r.safety_prompt
+    ORDER BY c.name, r.scenario, r.safety_prompt`
+  )
+  .all();
+write("heatmap-by-safety", heatmapBySafety);
+
 // ── Safety Prompt Comparison ─────────────────────────────
 const safetyComparison = db
   .prepare(

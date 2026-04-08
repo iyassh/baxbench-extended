@@ -6,7 +6,7 @@ import {
   getHeatmapData,
   getSafetyPromptComparison,
 } from "@/lib/queries";
-import { loadResultsByConfig } from "@/lib/data";
+import { loadResultsByConfig, loadHeatmapBySafety } from "@/lib/data";
 import { StatCard } from "@/components/stat-card";
 import { PageTransition } from "@/components/page-transition";
 import { InsightPills } from "@/components/insight-pills";
@@ -20,6 +20,7 @@ export default function OverviewPage() {
   const insights = getInsights();
   const heatmapRaw = getHeatmapData();
   const safetyData = getSafetyPromptComparison();
+  const heatmapBySafety = loadHeatmapBySafety();
 
   const configsWithResults = configs.filter((c) => c.total_results > 0);
   const totalResults = configsWithResults.reduce(
@@ -207,6 +208,7 @@ export default function OverviewPage() {
                 data={heatmapRaw}
                 models={heatmapModels}
                 scenarios={heatmapScenarios}
+                safetyData={heatmapBySafety}
               />
             </div>
           </section>

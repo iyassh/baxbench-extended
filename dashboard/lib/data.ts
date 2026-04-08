@@ -27,6 +27,10 @@ export function loadHeatmap() {
   return loadJSON<import("./types").HeatmapCell[]>("heatmap");
 }
 
+export function loadHeatmapBySafety() {
+  return loadJSON<(import("./types").HeatmapCell & { safety_prompt: string })[]>("heatmap-by-safety");
+}
+
 export function loadSafetyComparison() {
   return loadJSON<{
     config_name: string;
