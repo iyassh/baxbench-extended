@@ -300,7 +300,12 @@ export function getThinkingDelta(): DeltaRow[] {
     const delta = comparison - baseline;
     const delta_pct = baseline > 0 ? (delta / baseline) * 100 : 0;
 
-    results.push({ config: family, baseline, comparison, delta, delta_pct });
+    const baseline_true = pair.standard.true_sec_pass_at_1 || 0;
+    const comparison_true = pair.thinking.true_sec_pass_at_1 || 0;
+    const delta_true = comparison_true - baseline_true;
+    const delta_pct_true = baseline_true > 0 ? (delta_true / baseline_true) * 100 : 0;
+
+    results.push({ config: family, baseline, comparison, delta, delta_pct, baseline_true, comparison_true, delta_true, delta_pct_true });
   }
 
   return results.sort((a, b) => a.config.localeCompare(b.config));

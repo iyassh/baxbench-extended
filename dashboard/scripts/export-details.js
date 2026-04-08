@@ -32,7 +32,7 @@ function parsePrompt(codePath) {
 function getCodeFiles(codePath) {
   if (!fs.existsSync(codePath)) return [];
   return fs.readdirSync(codePath)
-    .filter((f) => !f.startsWith("."))
+    .filter((f) => !f.startsWith(".") && fs.statSync(path.join(codePath, f)).isFile())
     .map((f) => {
       const ext = path.extname(f);
       let language = "text";
