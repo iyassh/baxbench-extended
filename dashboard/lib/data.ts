@@ -63,3 +63,7 @@ export function loadCweTreemap() {
 export function loadSearchItems() {
   return loadJSON<import("./types").SearchItem[]>("search-items");
 }
+
+export function loadZapValidation() {
+  return loadJSON<any>("zap-validation");
+}
