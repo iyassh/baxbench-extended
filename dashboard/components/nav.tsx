@@ -12,6 +12,7 @@ const links = [
   { href: "/vulnerabilities", label: "Vulnerabilities" },
   { href: "/compare", label: "Compare" },
   { href: "/pentest", label: "Pentest" },
+  { href: "/results", label: "Results" },
 ];
 
 export function Nav() {
