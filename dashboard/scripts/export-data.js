@@ -125,7 +125,8 @@ const heatmap = db
       c.name as model,
       r.scenario,
       COUNT(DISTINCT rc.id) as cwe_count,
-      COUNT(DISTINCT r.id) as total_tests
+      COUNT(DISTINCT r.id) as total_tests,
+      SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as func_passes
     FROM configs c
     JOIN results r ON r.config_id = c.id
     LEFT JOIN result_cwes rc ON rc.result_id = r.id
@@ -143,7 +144,8 @@ const heatmapBySafety = db
       r.scenario,
       r.safety_prompt,
       COUNT(DISTINCT rc.id) as cwe_count,
-      COUNT(DISTINCT r.id) as total_tests
+      COUNT(DISTINCT r.id) as total_tests,
+      SUM(CASE WHEN r.functional_pass = 1 THEN 1 ELSE 0 END) as func_passes
     FROM configs c
     JOIN results r ON r.config_id = c.id
     LEFT JOIN result_cwes rc ON rc.result_id = r.id
