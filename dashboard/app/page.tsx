@@ -5,11 +5,13 @@ import {
   getInsights,
   getHeatmapData,
 } from "@/lib/queries";
+import { loadResultsByConfig } from "@/lib/data";
 import { StatCard } from "@/components/stat-card";
 import { PageTransition } from "@/components/page-transition";
 import { InsightPills } from "@/components/insight-pills";
 import { ModelRankingChart } from "@/components/charts/model-ranking-chart";
 import { VulnerabilityHeatmap } from "@/components/charts/vulnerability-heatmap";
+import { SecurityFunnel } from "@/components/security-funnel";
 
 export default function OverviewPage() {
   const configs = getAllConfigs();
@@ -35,6 +37,33 @@ export default function OverviewPage() {
 
   // Unique CWEs
   const uniqueCweCount = cwes.filter((c) => c.occurrence_count > 0).length;
+
+  // Funnel data: compute from results
+  const allResults = loadResultsByConfig();
+  let totalFunctionalPasses = 0;
+  let totalWithCwes = 0;
+  let totalSecurePasses = 0;
+  let totalTrulySecure = 0;
+  for (const [, results] of Object.entries(allResults)) {
+    for (const r of results) {
+      if (r.functional_pass) {
+        totalFunctionalPasses++;
+        if (r.cwes.length > 0) {
+          totalWithCwes++;
+        } else {
+          totalSecurePasses++;
+          if (r.num_st_exceptions === 0) {
+            totalTrulySecure++;
+          }
+        }
+      }
+    }
+  }
+
+  // Security rate among working apps
+  const secAmongWorking = totalFunctionalPasses > 0
+    ? (totalSecurePasses / totalFunctionalPasses * 100).toFixed(1)
+    : "0.0";
 
   // --- Model Ranking data ---
   const rankingData = configsWithResults.map((c) => {
@@ -89,9 +118,20 @@ export default function OverviewPage() {
           </div>
         </section>
 
-        {/* ─── Section 2: Stat Cards ─── */}
+        {/* ─── Section 2: Security Funnel ─── */}
+        <section id="funnel">
+          <SecurityFunnel
+            totalResults={totalResults}
+            functionalPasses={totalFunctionalPasses}
+            withCwes={totalWithCwes}
+            securePasses={totalSecurePasses}
+            trulySecure={totalTrulySecure}
+          />
+        </section>
+
+        {/* ─── Section 3: Stat Cards ─── */}
         <section id="stats">
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
             <StatCard
               title="Total Results"
               value={totalResults}
@@ -114,6 +154,12 @@ export default function OverviewPage() {
               value={`${(configsWithResults.reduce((s, c) => s + (c.true_sec_pass_at_1 || 0), 0) / configCount * 100).toFixed(1)}%`}
               accent="green"
               subtitle="Clean tests only"
+            />
+            <StatCard
+              title="Secure (Working Only)"
+              value={`${secAmongWorking}%`}
+              accent="purple"
+              subtitle={`${totalSecurePasses} of ${totalFunctionalPasses} functional apps`}
             />
             <StatCard
               title="CWEs Detected"
