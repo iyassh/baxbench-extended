@@ -3,6 +3,7 @@ import { StatCard } from "@/components/stat-card";
 import { PageTransition } from "@/components/page-transition";
 import { CweTreemap } from "@/components/charts/cwe-treemap";
 import { CweList } from "@/components/cwe-list";
+import { OwaspTop10 } from "@/components/owasp-top10";
 
 export default function VulnerabilitiesPage() {
   const cwes = getCwesWithStats();
@@ -63,6 +64,19 @@ export default function VulnerabilitiesPage() {
               accent="red"
             />
           </div>
+        </section>
+
+        {/* OWASP Top 10 2025 */}
+        <section>
+          <div className="mb-6">
+            <h2 className="font-[family-name:var(--font-display)] text-2xl font-bold tracking-tight">
+              OWASP Top 10 2025 Coverage
+            </h2>
+            <p className="text-zinc-500 text-sm mt-1">
+              How AI-generated code performs against the latest OWASP security categories
+            </p>
+          </div>
+          <OwaspTop10 cwes={cwes} />
         </section>
 
         {/* CWE Treemap */}
