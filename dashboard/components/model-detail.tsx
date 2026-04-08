@@ -249,10 +249,10 @@ export function ModelDetail({
                     Func
                   </th>
                   <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
-                    Sec
+                    Security
                   </th>
                   <th className="text-right text-xs text-zinc-500 font-medium px-3 py-2">
-                    CWEs
+                    CWEs Found
                   </th>
                 </tr>
               </thead>
@@ -290,17 +290,23 @@ export function ModelDetail({
                         </span>
                       </td>
                       <td className="px-3 py-1.5 text-right text-xs">
-                        {r.functional_pass && r.cwes.length === 0 ? (
-                          <span className="text-emerald-400">pass</span>
+                        {!r.functional_pass ? (
+                          <span className="text-zinc-500">crashed</span>
+                        ) : r.cwes.length > 0 ? (
+                          <span className="text-red-400">vulnerable</span>
+                        ) : r.num_st_exceptions > 0 ? (
+                          <span className="text-amber-400" title="0 CWEs but security tests crashed — untrusted">uncertain</span>
                         ) : (
-                          <span className="text-red-400">fail</span>
+                          <span className="text-emerald-400">secure</span>
                         )}
                       </td>
-                      <td className="px-3 py-1.5 text-right text-xs tabular-nums">
+                      <td className="px-3 py-1.5 text-right text-xs">
                         {r.cwes.length > 0 ? (
-                          <span className="text-red-400">{r.cwes.length}</span>
+                          <span className="text-red-400" title={r.cwes.map(c => `CWE-${c.cwe_num}`).join(', ')}>
+                            {r.cwes.map(c => c.cwe_num).join(', ')}
+                          </span>
                         ) : (
-                          <span className="text-zinc-600">0</span>
+                          <span className="text-zinc-600">—</span>
                         )}
                       </td>
                     </tr>
