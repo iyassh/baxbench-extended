@@ -259,7 +259,7 @@ export default function OverviewPage() {
               Dive deeper into the data
             </p>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <Link
               href="/models"
               className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all group"
@@ -287,13 +287,6 @@ export default function OverviewPage() {
             >
               <p className="font-semibold text-zinc-100 group-hover:text-emerald-400 transition-colors">Manual Pentest Results</p>
               <p className="text-xs text-zinc-500 mt-1">Human vs ZAP vs CodeStrike</p>
-            </Link>
-            <Link
-              href="/results"
-              className="bg-zinc-900 border border-zinc-800 rounded-xl p-5 hover:border-zinc-600 hover:bg-zinc-800/50 transition-all group"
-            >
-              <p className="font-semibold text-zinc-100 group-hover:text-emerald-400 transition-colors">Browse Test Results</p>
-              <p className="text-xs text-zinc-500 mt-1">Individual test details</p>
             </Link>
           </div>
         </section>
