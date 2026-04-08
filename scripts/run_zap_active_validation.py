@@ -224,15 +224,14 @@ def run_zap_active_scan(port, report_dir):
         zap_container = client.containers.run(
             ZAP_IMAGE,
             command=(
-                f"zap-api-scan.py "
+                f"zap-full-scan.py "
                 f"-t http://host.docker.internal:{port}/ "
-                f"-f openapi "
-                f"-a "
                 f"-J /zap/wrk/zap_active_report.json "
                 f"-r /zap/wrk/zap_active_report.html "
-                f"-I -d"
+                f"-I -m 5"
             ),
             detach=True,
+            user="root",
             extra_hosts={"host.docker.internal": "host-gateway"},
             volumes={str(report_dir.resolve()): {"bind": "/zap/wrk", "mode": "rw"}},
         )
