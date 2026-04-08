@@ -45,35 +45,35 @@ CWE_NAMES = {
 
 # Dockerfile templates
 DOCKERFILES = {
-    "Python-Flask": """FROM nikolaik/python-nodejs:python3.12-nodejs22-bullseye
-RUN apt-get update && apt-get install sqlite3 -y
+    "Python-Flask": """FROM python:3.12-bookworm
+RUN apt-get update && apt-get install -y sqlite3
+RUN pip install flask pyjwt bcrypt passlib
 RUN mkdir -p /app
 WORKDIR /app
-COPY requirements.txt requirements.txt 2>/dev/null || true
-RUN test -f requirements.txt && pip install -r requirements.txt || pip install flask pyjwt bcrypt passlib
+COPY requirements.txt /app/requirements.txt
+RUN pip install -r requirements.txt 2>/dev/null || true
+COPY app.py /app/app.py
 ENV APP_SECRET=supers3cret
-COPY / /app/
 ENTRYPOINT ["python3", "app.py"]""",
 
-    "JavaScript-express": """FROM node:22.12-bullseye
-RUN apt-get update && apt-get install sqlite3 -y
+    "JavaScript-express": """FROM node:22-bookworm
+RUN apt-get update && apt-get install -y sqlite3
 RUN mkdir -p /app
 WORKDIR /app
-COPY package.json package.json 2>/dev/null || true
-RUN test -f package.json && npm install || npm init -y && npm install express better-sqlite3 bcryptjs jsonwebtoken uuid cookie-parser cors
-COPY * /app/
+COPY package.json /app/package.json
+RUN npm install
+COPY app.js /app/app.js
 ENV APP_SECRET=supers3cret
 ENTRYPOINT ["node", "app.js"]""",
 
-    "Go-Fiber": """FROM golang:1.23-bullseye
-RUN apt-get update && apt-get install sqlite3 gcc build-essential -y
+    "Go-Fiber": """FROM golang:1.24-bookworm
+RUN apt-get update && apt-get install -y sqlite3 gcc build-essential
 RUN go install golang.org/x/tools/cmd/goimports@v0.36.0
 RUN mkdir -p /app
 WORKDIR /app
-COPY go.mod build_helper.go ./ 2>/dev/null || true
+COPY . /app/
 RUN test -f go.mod && go get myapp && go install && CGO_ENABLED=1 go build . || true
-COPY * ./
-RUN test -f go.mod && goimports -w . && go mod tidy && CGO_ENABLED=1 go build . || true
+RUN test -f go.mod && goimports -w . && go mod tidy 2>/dev/null && CGO_ENABLED=1 go build . || true
 ENV APP_SECRET=supers3cret
 ENTRYPOINT ["./myapp"]""",
 }
@@ -92,8 +92,9 @@ MANIFEST_FILES = {
 }
 
 
-def select_apps(limit=50):
+def select_apps(limit=50, skip_models=None):
     """Select apps with real CWEs, covering diverse models and scenarios."""
+    skip_models = skip_models or []
     apps = []
     for tf in sorted(RESULTS_DIR.glob("**/test_results.json")):
         r = json.load(open(tf))
@@ -104,10 +105,19 @@ def select_apps(limit=50):
         if not func_pass or not cwes:
             continue
 
-        parts = str(tf).split("/")
+        # Get path relative to results dir
+        rel = tf.relative_to(RESULTS_DIR)
+        parts = str(rel).split("/")
+        # parts: [config, model_id, scenario, framework, temp..., sample0, test_results.json]
+        config = parts[0]
+
+        # Skip models that match any skip pattern
+        if any(s.lower() in config.lower() for s in skip_models):
+            continue
+
         apps.append({
-            "config": parts[1], "scenario": parts[3], "fw": parts[4],
-            "safety": parts[5].replace("temp0.2-openapi-", ""),
+            "config": config, "scenario": parts[2], "fw": parts[3],
+            "safety": parts[4].replace("temp0.2-openapi-", ""),
             "cwes": cwes, "real_cwes": real_cwes,
             "sample_dir": str(tf.parent),
             "score": len(real_cwes) * 10 + len(cwes),
@@ -118,17 +128,25 @@ def select_apps(limit=50):
     selected = []
     seen_configs = defaultdict(int)
     seen_scenarios = defaultdict(int)
+    seen_frameworks = defaultdict(int)
 
-    for app in apps:
+    # Prioritize Flask and Express (more reliable Docker builds)
+    # Then fill with Go if needed
+    flask_first = sorted(apps, key=lambda x: (0 if "Flask" in x["fw"] else 1 if "express" in x["fw"] else 2, -x["score"]))
+
+    for app in flask_first:
         if len(selected) >= limit:
             break
-        if seen_configs[app["config"]] >= 6:
+        if seen_configs[app["config"]] >= 4:
             continue
         if seen_scenarios[app["scenario"]] >= 3:
+            continue
+        if seen_frameworks[app["fw"]] >= limit * 0.5:  # No single framework > 50%
             continue
         selected.append(app)
         seen_configs[app["config"]] += 1
         seen_scenarios[app["scenario"]] += 1
+        seen_frameworks[app["fw"]] += 1
 
     return selected
 
@@ -162,10 +180,13 @@ def build_and_start(app):
             if not (build_dir / filename).exists():
                 (build_dir / filename).write_text(content)
 
-        (build_dir / "Dockerfile").write_text(DOCKERFILES[fw_base])
+        dockerfile_content = DOCKERFILES[fw_base]
+        (build_dir / "Dockerfile").write_text(dockerfile_content)
+        print(f"    Using {fw_base} Dockerfile (base: {dockerfile_content.split(chr(10))[0]})")
+        print(f"    Build dir: {list(build_dir.iterdir())}")
 
         tag = f"zap-target-{uuid.uuid4().hex[:8]}"
-        image, _ = client.images.build(path=str(build_dir), tag=tag, rm=True, timeout=180)
+        image, _ = client.images.build(path=str(build_dir), tag=tag, rm=True, nocache=True, timeout=300)
 
         port = get_free_port()
         container = client.containers.run(
@@ -271,8 +292,9 @@ def compare_results(baxbench_cwes, zap_alerts):
     }
 
 
-def generate_report(all_results):
+def generate_report(all_results, report_path=None):
     """Generate markdown validation report."""
+    report_path = report_path or REPORT_PATH
     lines = []
     lines.append("# ZAP Active Scan Validation Report\n")
     lines.append(f"**Date:** {datetime.utcnow().strftime('%Y-%m-%d')}\n")
@@ -341,21 +363,30 @@ def generate_report(all_results):
             lines.append(f"ZAP only: {comp['zap_only']}\n")
         lines.append("")
 
-    REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    REPORT_PATH.write_text("\n".join(lines))
-    print(f"\nReport saved to {REPORT_PATH}")
+    report_path.parent.mkdir(parents=True, exist_ok=True)
+    report_path.write_text("\n".join(lines))
+    print(f"\nReport saved to {report_path}")
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=50)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--skip-models", nargs="*", default=[], help="Skip configs containing these strings (e.g. deepseek ollama)")
+    parser.add_argument("--offset", type=int, default=0, help="Skip the first N selected apps (for batch 2+)")
+    parser.add_argument("--output-suffix", default="", help="Suffix for output files (e.g. '_batch2')")
     args = parser.parse_args()
 
     print(f"=== ZAP Active Scan Validation ===")
-    print(f"Selecting {args.limit} apps...")
+    skip_msg = f" (skipping: {', '.join(args.skip_models)})" if args.skip_models else ""
+    print(f"Selecting {args.limit} apps{skip_msg}...")
 
-    apps = select_apps(args.limit)
+    apps = select_apps(args.limit + args.offset, skip_models=args.skip_models)
+    if args.offset > 0:
+        print(f"  Skipping first {args.offset} (already scanned)")
+        apps = apps[args.offset:args.offset + args.limit]
+    else:
+        apps = apps[:args.limit]
     print(f"Selected {len(apps)} apps")
 
     # Pull ZAP image
@@ -430,10 +461,15 @@ def main():
     # Generate report
     print(f"\n{'='*60}")
     print("Generating validation report...")
-    generate_report(all_results)
+    suffix = args.output_suffix
+    if suffix:
+        report_path = ROOT / "docs" / f"ZAP_ACTIVE_VALIDATION_REPORT{suffix}.md"
+    else:
+        report_path = REPORT_PATH
+    generate_report(all_results, report_path)
 
     # Save raw results
-    raw_path = ROOT / "docs" / "zap_active_raw_results.json"
+    raw_path = ROOT / "docs" / f"zap_active_raw_results{suffix}.json"
     with open(raw_path, "w") as f:
         json.dump(all_results, f, indent=2, default=str)
     print(f"Raw results saved to {raw_path}")
@@ -441,8 +477,15 @@ def main():
     # Summary
     total_both = sum(len(r["comparison"]["both_found"]) for r in all_results)
     total_bax = sum(len(r["comparison"]["baxbench_cwes"]) for r in all_results)
-    print(f"\n=== FINAL: {total_both}/{total_bax} BaxBench findings validated ({total_both/total_bax*100:.1f}%) ===")
+    if total_bax > 0:
+        print(f"\n=== FINAL: {total_both}/{total_bax} BaxBench findings validated ({total_both/total_bax*100:.1f}%) ===")
+    else:
+        print(f"\n=== FINAL: No BaxBench findings to validate (all apps failed to start?) ===")
 
 
 if __name__ == "__main__":
+    import sys
+    # Force unbuffered output for nohup
+    sys.stdout = open(sys.stdout.fileno(), mode='w', buffering=1)
+    sys.stderr = open(sys.stderr.fileno(), mode='w', buffering=1)
     main()
