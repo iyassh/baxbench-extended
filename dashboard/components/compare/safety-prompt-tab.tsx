@@ -199,48 +199,55 @@ export function SafetyPromptTab({
       >
         <div className="px-6 py-4 border-b border-zinc-800">
           <h3 className="text-lg font-semibold text-zinc-100">
-            Safety Prompt Impact (None → Specific)
+            Safety Prompt Impact — All Three Prompts
           </h3>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-zinc-800">
-                <th className="px-6 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase tracking-wider">
                   Config
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-right text-xs font-medium text-red-400 uppercase tracking-wider">
                   None
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                <th className="px-4 py-3 text-right text-xs font-medium text-blue-400 uppercase tracking-wider">
+                  Generic
+                </th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-emerald-400 uppercase tracking-wider">
                   Specific
                 </th>
-                <th className="px-6 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider">
-                  Change
+                <th className="px-4 py-3 text-right text-xs font-medium text-zinc-400 uppercase tracking-wider">
+                  Change (None→Spec)
                 </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-zinc-800/50">
-              {deltaData.map((row) => {
+              {sorted.map((row) => {
                 const noneVal = showTrue ? row.none_true : row.none;
+                const genVal = showTrue ? row.generic_true : row.generic;
                 const specVal = showTrue ? row.specific_true : row.specific;
-                const changeVal = showTrue ? row.change_true : row.change;
+                const changeVal = specVal - noneVal;
 
                 return (
                   <tr
                     key={row.config}
                     className="hover:bg-zinc-800/30 transition-colors"
                   >
-                    <td className="px-6 py-3 font-medium text-zinc-200">
+                    <td className="px-4 py-3 font-medium text-zinc-200 text-xs">
                       {row.config}
                     </td>
-                    <td className="px-6 py-3 text-right tabular-nums text-zinc-400">
+                    <td className="px-4 py-3 text-right tabular-nums text-red-400 text-xs">
                       {noneVal.toFixed(1)}%
                     </td>
-                    <td className="px-6 py-3 text-right tabular-nums text-zinc-400">
+                    <td className="px-4 py-3 text-right tabular-nums text-blue-400 text-xs">
+                      {genVal.toFixed(1)}%
+                    </td>
+                    <td className="px-4 py-3 text-right tabular-nums text-emerald-400 text-xs">
                       {specVal.toFixed(1)}%
                     </td>
-                    <td className="px-6 py-3 text-right">
+                    <td className="px-4 py-3 text-right">
                       <span
                         className={`inline-flex items-center gap-1 tabular-nums font-medium ${
                           changeVal > 0
