@@ -31,7 +31,7 @@ const familyColors: Record<string, { solid: string; light: string }> = {
   gemma: { solid: "#06b6d4", light: "#22d3ee" },
 };
 
-type SortKey = "sec_pass" | "true_sec" | "pass_at_1" | "cwes" | "name";
+type SortKey = "sec_pass" | "true_sec" | "pass_at_1" | "sec_working" | "cwes" | "name";
 
 function getBarColor(family: string, thinking: boolean): string {
   const colors = familyColors[family] || familyColors.haiku;
@@ -42,6 +42,8 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
   const [sortBy, setSortBy] = useState<SortKey>("sec_pass");
 
   const sorted = [...data].sort((a, b) => {
+    const aSecWorking = (a.functional_passes || 1) > 0 ? ((a.secure_passes || 0) / (a.functional_passes || 1)) : 0;
+    const bSecWorking = (b.functional_passes || 1) > 0 ? ((b.secure_passes || 0) / (b.functional_passes || 1)) : 0;
     switch (sortBy) {
       case "sec_pass":
         return b.sec_pass_at_1 - a.sec_pass_at_1;
@@ -49,6 +51,8 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
         return b.true_sec_pass_at_1 - a.true_sec_pass_at_1;
       case "pass_at_1":
         return b.pass_at_1 - a.pass_at_1;
+      case "sec_working":
+        return bSecWorking - aSecWorking;
       case "cwes":
         return a.total_cwes - b.total_cwes; // fewer is better
       case "name":
@@ -65,6 +69,7 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
   const sortButtons: { key: SortKey; label: string }[] = [
     { key: "sec_pass", label: "sec_pass@1" },
     { key: "true_sec", label: "true_sec@1" },
+    { key: "sec_working", label: "Secure (Working)" },
     { key: "pass_at_1", label: "pass@1" },
     { key: "cwes", label: "Fewest CWEs" },
     { key: "name", label: "Name" },
@@ -108,6 +113,9 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
               </th>
               <th className="text-right py-2.5 px-2 text-xs text-emerald-400 font-medium uppercase tracking-wider">
                 <span title="sec_pass@1 but also requires zero security test exceptions">true_sec@1</span>
+              </th>
+              <th className="text-right py-2.5 px-2 text-xs text-purple-400 font-medium uppercase tracking-wider">
+                <span title="Secure passes divided by functional passes only — excludes crashes">Sec (Working)</span>
               </th>
               <th className="text-right py-2.5 px-2 text-xs text-blue-400 font-medium uppercase tracking-wider">
                 <span title="Functional pass rate — does the code work?">pass@1</span>
@@ -179,6 +187,21 @@ export function ModelRankingChart({ data }: ModelRankingChartProps) {
                     )}>
                       {model.true_sec_pass_at_1.toFixed(1)}%
                     </span>
+                  </td>
+                  <td className="py-2 px-2 text-right">
+                    {(() => {
+                      const fp = model.functional_passes || 0;
+                      const sp = model.secure_passes || 0;
+                      const secWorkingPct = fp > 0 ? (sp / fp * 100) : 0;
+                      return (
+                        <span className={cn(
+                          "font-medium tabular-nums text-xs",
+                          secWorkingPct > 0 ? "text-purple-400" : "text-zinc-600"
+                        )}>
+                          {secWorkingPct.toFixed(1)}%
+                        </span>
+                      );
+                    })()}
                   </td>
                   <td className="py-2 px-2 text-right">
                     <span className="text-blue-400 font-medium tabular-nums text-xs">
