@@ -315,7 +315,74 @@ The original BaxBench paper counted crashed apps as "secure" because no CWEs wer
 
 ---
 
-## 12. Key Numbers For Slides
+## 12. Deep Insights Discovered During Analysis
+
+These are specific insights we uncovered while verifying every number on the dashboard. Each one is backed by database evidence.
+
+### Insight: The OWASP "Clean" Categories Aren't Actually Clean
+> "We tested for all 10 OWASP Top 10 2025 categories. Found vulnerabilities in 7 out of 10. The 3 clean categories are not necessarily secure — 2 of them (A08 Integrity, A06 Components) couldn't be properly tested due to high security test crash rates (70%+). Only A09 (Logging) appears genuinely clean."
+
+Evidence:
+- A08 (JWT tests): Login scenario has 1,171 ST exceptions out of 1,656 total security tests (70.7% crash rate). SecretStorage: 1,017/1,516 (67.1%). The JWT tests (`sec_test_jwt_flaws`) crash because AI code doesn't use standard JWT libraries correctly.
+- A06 (Components): AI generates code with current library versions from training data — it doesn't know about old vulnerable versions.
+- A09 (Logging): Simple AI apps don't implement detailed error pages. They either crash entirely or return generic messages.
+
+### Insight: Generic "Write Secure Code" Is Worse Than Nothing
+> "Vague security instructions produce worse results than no instructions at all. 'Write secure code' achieves 0.07% sec_pass vs 0.26% with no instructions."
+
+Evidence: Generic prompt drops pass@1 from 48.1% to 23.0% (more crashes) while producing only 1 secure app vs 4 with no prompt. The model tries to add security but does it wrong — half-implemented auth that breaks functionality without actually being secure.
+
+### Insight: Only 1 Model Produces Secure Code Without Being Asked
+> "When no safety prompt is given, 14 out of 15 models produce ZERO secure apps. Only sonnet-4-standard accidentally generates 4 secure apps. AI does not think about security unless explicitly told."
+
+Evidence: With safety_prompt='none', sonnet-4-standard has 4/47 secure working apps (8.5%). Every other model is at 0/N (0.0%). The 4 secure apps are simple scenarios (Calculator, UptimeService, UserCreation) where minimal code happens to be secure by simplicity, not by design.
+
+### Insight: The Heatmap Green Cells Were Mostly Fake
+> "65 of 67 green cells (0 CWEs) in the vulnerability heatmap were apps that ALL crashed — they looked secure but were actually broken. Only 2 green cells represented genuinely secure model-scenario combinations."
+
+Evidence: We fixed the heatmap to show grey for "all crashed" instead of green. The 2 genuinely secure cells are: sonnet-4.5-standard/CreditCardService and sonnet-4.5-thinking/FileSearch — the only model+scenario combinations where at least 1 app works AND has 0 CWEs across all 9 tests.
+
+### Insight: The Quality-Security Trade-Off
+> "Specific safety prompts create a trade-off: pass@1 drops from 48% to 14% (more complexity = more crashes) but security of surviving code jumps from 0.5% to 70.5%. The code that handles the complexity correctly is genuinely secure."
+
+This is like building a house: adding locks, alarms, and fireproofing makes construction harder (more crashes). But the houses that successfully get built with all security features ARE actually secure.
+
+### Insight: Express Dominates Because Of Training Data
+> "144 of 146 secure apps are JavaScript-Express. Python-Flask has only 2. Go-Fiber has zero. AI models have the most training data for Node.js/Express security patterns."
+
+Evidence: Express sec_pass@1 = 9.6%, Flask = 0.1%, Go-Fiber = 0.0%. This suggests the quality of AI-generated secure code is directly proportional to the volume of secure code examples in training data.
+
+### Insight: meta-llama Is A Paradox
+> "meta-llama-3.3-70b has a decent pass@1 (35.4% — above average) but 0.0% security across ALL metrics. It can write functional code but never secure code. This separates the code quality problem from the security problem."
+
+Evidence: 56 of 158 llama apps work (35.4%), which is higher than opus-4.1-standard (22.2%) and sonnet-4.5-standard (22.9%). But all 56 working apps have vulnerabilities. Llama writes working code that is always hackable.
+
+### Insight: Security Test Crash Rate Is A Hidden Problem
+> "26,287 security test exceptions out of 37,564 total security tests — a 70% crash rate. Most security tests can't even run because the app they're testing is too broken or non-standard."
+
+This means our security findings are conservative — we're only reporting CWEs from the 30% of security tests that actually executed. The true vulnerability rate is likely higher.
+
+### Insight: sonnet-4-thinking Has Best pass@1 But Not Best Security
+> "sonnet-4-thinking achieves the highest functional pass rate at 38.1% but only average security (3.5% sec_pass). Being more functional doesn't mean being more secure — it means more working apps that are hackable."
+
+Evidence: sonnet-4-thinking has 120 functional apps (highest) but only 11 secure. sonnet-4-standard has 100 functional apps but 14 secure. More working code means more attack surface.
+
+### Insight: The Per-Model Safety Prompt Effect Is Universal
+> "Every Claude model goes from ~0% to ~10-13% sec_pass when given specific safety prompts. The improvement is consistent across all model versions and thinking modes."
+
+Evidence from the safety prompt toggle:
+- None: all models 0% except sonnet-4-std (3.8%)
+- Specific: sonnet-4.5-thinking 13.3%, opus-4.1-thinking 12.4%, opus-4-standard 11.4%
+- The improvement applies universally — it's a prompting technique, not a model capability
+
+### Insight: Sec (Working) Reveals The True Comparison
+> "sec_pass@1 makes all Claude models look similar (2.5-4.4%) because it's dominated by crash rates. Sec (Working) reveals real differences: sonnet-4.5-thinking at 15.1% vs haiku-4.5 at 8.2%."
+
+sec_pass@1 divides by all tests including crashes. Since crash rates vary by model, sec_pass conflates quality and security. Sec (Working) isolates the security question: "when the code works, is it secure?"
+
+---
+
+## 13. Key Numbers For Slides
 
 ### Slide 1: The Problem
 - 4,505 AI-generated web apps tested
