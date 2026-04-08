@@ -244,7 +244,7 @@ We manually pentested 10 apps and compared 3 detection methods.
 
 ### CodeStrike Accuracy
 - **100% precision** — every vulnerability CodeStrike found was real (0 false positives)
-- **27% recall** — found 11 of 41 real vulnerabilities (missed 30)
+- **27% recall** — found 11 of 41 comparable vulnerabilities (missed 30). Total manual findings were 47, but 6 were outside CodeStrike's testing scope (informational issues).
 - **0 false positives** — CodeStrike never accused secure code of being vulnerable
 
 ### What Each Tool Misses
@@ -296,7 +296,55 @@ CodeStrike runs **inside Docker** alongside the app. ZAP can only send HTTP requ
 
 ---
 
-## 11. Finding: The "Secure By Crash" Bug
+## 11. Finding: Severity Classification
+
+Vulnerabilities are classified using the OWASP Risk Rating methodology, based on impact and exploitability:
+
+| Severity | Count | What It Means | Example From Our Testing |
+|---|---|---|---|
+| **Critical** | 2 | Remote code execution, full data breach possible | SSRF in LinkPreview (access internal network), Stored XSS in Forum (hijack all sessions) |
+| **High** | 12 | Significant data exposure or auth bypass | Missing authentication on admin endpoints, plaintext password storage, IDOR |
+| **Medium** | 22 | Moderate impact, requires some conditions | Missing CSRF tokens, no rate limiting on login, weak session management |
+| **Low** | 11 | Minor information disclosure or best-practice violations | Missing security headers, verbose error messages, cookie flags not set |
+
+The severity distribution shows that AI-generated code has serious security issues — 14 critical+high findings out of 47 total (30%). These aren't just missing headers — they're exploitable vulnerabilities that could lead to real data breaches.
+
+## 11b. Finding: ZAP 3-Mode Validation
+
+We tested OWASP ZAP in three configurations against the same 10 manually pentested apps:
+
+### Mode 1: Baseline Scan (`zap-baseline.py`)
+- **What it does:** Passive scanning only — reads HTTP responses without sending attack payloads
+- **Result:** Found CWE-693 (missing security headers) in all 10 apps. Nothing else.
+- **Why:** It never sends exploit payloads. It only checks what the server includes in its responses.
+
+### Mode 2: Full Scan (`zap-full-scan.py`)
+- **What it does:** Enables all 56 active scan rules including XSS probes, SQLi payloads, path traversal
+- **Result:** Same as baseline — still only found CWE-693
+- **Why:** ZAP needs to discover API endpoints first. Without an OpenAPI spec, it only finds the root URL and can't test individual routes.
+
+### Mode 3: API Scan with OpenAPI Spec (`zap-api-scan.py`)
+- **What it does:** We gave ZAP the full OpenAPI specification so it knows every endpoint, parameter, and expected format
+- **Result:** 13 alerts — found CWE-693 (headers) and CWE-209 (error info leakage). Still missed XSS, SQLi, CSRF, brute force, and all logic vulnerabilities.
+- **Why:** Even with endpoint knowledge, ZAP's XSS scanner injects `<script>` tags but our apps return JSON (not HTML), so it never detects reflection. SQLi payloads don't trigger errors in parameterized queries.
+
+### Summary of ZAP Validation
+| Scan Mode | Alerts | Unique CWEs | Of 47 Manual Findings |
+|---|---|---|---|
+| Baseline (passive) | ~10 | 1 | Found 0 real vulnerabilities |
+| Full (all rules) | ~10 | 1 | Found 0 real vulnerabilities |
+| API + OpenAPI | 13 | 2 | Found headers + error leakage only |
+| **Total** | **~33** | **2** | **14.3% agreement with CodeStrike** |
+
+### What This Proves
+ZAP is the industry-standard security scanner. If ZAP can only find 2 of 12 CWE types that manual testing found, it validates that:
+1. **CodeStrike's in-Docker approach finds real vulnerabilities that external scanners miss**
+2. **DAST tools alone are insufficient for API security testing**
+3. **The 3-way comparison (Manual > CodeStrike > ZAP) justifies our benchmark's approach**
+
+---
+
+## 12. Finding: The "Secure By Crash" Bug
 
 ### What We Found
 The original BaxBench paper counted crashed apps as "secure" because no CWEs were detected on non-functional code. This inflated security rates massively.

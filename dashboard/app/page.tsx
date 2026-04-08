@@ -228,7 +228,7 @@ export default function OverviewPage() {
             <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-4 flex items-center gap-3">
               <div className="w-2 h-10 rounded-full bg-emerald-500 shrink-0" />
               <div>
-                <p className="text-lg font-semibold text-emerald-400 tabular-nums">41 manual findings</p>
+                <p className="text-lg font-semibold text-emerald-400 tabular-nums">47 manual findings</p>
                 <p className="text-xs text-zinc-500">Across 10 apps</p>
               </div>
             </div>
